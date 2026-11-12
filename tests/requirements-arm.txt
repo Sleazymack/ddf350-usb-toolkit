@@ -1,0 +1,3 @@
+# Optional independent CPU emulation only. No package is vendored here.
+capstone==5.0.7
+unicorn==2.1.4

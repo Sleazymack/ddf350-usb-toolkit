@@ -1,7 +1,7 @@
 EXPERIMENTAL BETA — USE AT YOUR OWN RISK
 
 This is an unofficial community project, independent of DumboRC.
-Version 0.5.9 is test software and may contain bugs. It can crash, change settings,
+Version 0.7.1 is test software and may contain bugs. It can crash, change settings,
 interrupt USB operation, or render your transmitter unusable, including bricking.
 You use the application and flash firmware entirely at your own risk.
 The software is provided AS IS, without warranties of functionality,
@@ -18,5 +18,5 @@ Rollback requires a working, compatible maintenance mode. Including the original
 firmware does not guarantee that a failed or bricked radio can be recovered.
 
 The manufacturer's exact official 2.0.5 application image is included in the EXE
-and separately in official-firmware-2.0.5/DDF.bin. It remains the manufacturer's
+and separately in firmware/DDF-2.0.5.bin. It remains the manufacturer's
 property and is not licensed under the MIT license covering our original code.

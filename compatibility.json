@@ -1,0 +1,243 @@
+{
+  "tool_version": "0.7.1-experimental",
+  "hardware": "DDF-350 HW 1.0",
+  "required_original": {
+    "firmware": "DumboRC DDF-350 official 2.0.5",
+    "file": "DDF.bin",
+    "bytes": 626956,
+    "sha256": "06c47e22049f0ec91823156b3a1afb997dfe31309d06c493aab08426d2866bbc",
+    "distributed_here": true,
+    "distribution_scope": "Included in the source checkout, release executable and portable ZIP.",
+    "resource": "firmware/DDF-2.0.5.bin"
+  },
+  "distribution": "public-portable",
+  "firmware_included": true,
+  "included_startup_presets": [],
+  "startup_media": {
+    "default": "original",
+    "photo": {
+      "formats": [
+        "PNG",
+        "JPEG",
+        "BMP"
+      ],
+      "size": [
+        192,
+        256
+      ],
+      "centered": true,
+      "preserve_aspect_ratio": true,
+      "format": "static native RGB565"
+    },
+    "gif": {
+      "max_bytes_exclusive": 280000,
+      "max_fps": 5,
+      "frame_ms_range": [
+        200,
+        1000
+      ],
+      "frames_range": [
+        2,
+        20
+      ],
+      "max_duration_ms": 4000,
+      "embedded_colors": 16,
+      "repeat_count": 1,
+      "hardware_validated": false
+    },
+    "included_presets": [],
+    "player_versions_recognized": [
+      1,
+      2,
+      3
+    ],
+    "docs": "docs/startup-media.md"
+  },
+  "dashboard_upper_area": [
+    "stock",
+    "battery_only"
+  ],
+  "dashboard_lower_grid": [
+    6,
+    4
+  ],
+  "usb_channels": [
+    "CH1",
+    "CH2"
+  ],
+  "startup_player_versions": [
+    1,
+    2,
+    3
+  ],
+  "default_startup": "original",
+  "startup_media_hardware_validated": false,
+  "known_fixed_outputs": [
+    {
+      "variant": "clock192",
+      "dashboard": "original",
+      "default": true,
+      "bytes": 626956,
+      "sha256": "b122be6391d42354bff9d4e146526dcca323d277abecc1a999f539276af6902c",
+      "changed_existing_bytes": 1,
+      "appended_bytes": 0,
+      "intended_cpu_mhz": 192,
+      "requested_usb_interval_ms": 20,
+      "portable_output_hardware_tested": false,
+      "reverts_to_original_file_exactly": true
+    },
+    {
+      "variant": "clock192-usb1ms",
+      "dashboard": "original",
+      "default": false,
+      "option": "--usb-1ms",
+      "bytes": 627232,
+      "sha256": "9afd478afc6085b48435816273f844ff277facbb48d7116f5bfe84daa0cbf250",
+      "changed_existing_bytes": 19,
+      "appended_bytes": 276,
+      "intended_cpu_mhz": 192,
+      "requested_usb_interval_ms": 1,
+      "portable_output_hardware_tested": false,
+      "reverts_to_original_file_exactly": true
+    },
+    {
+      "variant": "clock192-ch1234",
+      "dashboard": "ch1234",
+      "default": false,
+      "options": [
+        "--dashboard",
+        "ch1234"
+      ],
+      "bytes": 626956,
+      "sha256": "ab1e07209af3ded75a70f5567dc598ba33ec05de9cd771edee27448b9f8bf67e",
+      "changed_existing_bytes": 5,
+      "appended_bytes": 0,
+      "intended_cpu_mhz": 192,
+      "requested_usb_interval_ms": 20,
+      "portable_output_hardware_tested": false,
+      "reverts_to_original_file_exactly": true
+    },
+    {
+      "variant": "clock192-usb1ms-ch1234",
+      "dashboard": "ch1234",
+      "default": false,
+      "options": [
+        "--usb-1ms",
+        "--dashboard",
+        "ch1234"
+      ],
+      "bytes": 627232,
+      "sha256": "3f67d80255dca8fe7c3544ad7417bc88b4067f3bce01e4899913187e6f1095de",
+      "changed_existing_bytes": 23,
+      "appended_bytes": 276,
+      "intended_cpu_mhz": 192,
+      "requested_usb_interval_ms": 1,
+      "portable_output_hardware_tested": false,
+      "reverts_to_original_file_exactly": true
+    },
+    {
+      "variant": "clock192-ch123456",
+      "dashboard": "ch123456",
+      "default": false,
+      "options": [
+        "--dashboard",
+        "ch123456"
+      ],
+      "bytes": 629292,
+      "sha256": "f622f91d45b0bc1063cb3c11ff1a82806f2160a91213bfa65db27f34e237f365",
+      "changed_existing_bytes": 8,
+      "appended_bytes": 2336,
+      "intended_cpu_mhz": 192,
+      "requested_usb_interval_ms": 20,
+      "portable_output_hardware_tested": false,
+      "reverts_to_original_file_exactly": true,
+      "dashboard_helper": {
+        "appendix_offset": 626956,
+        "appendix_bytes": 2336,
+        "functions": {
+          "convert": 626972,
+          "update": 627044,
+          "cleanup": 627552,
+          "layout": 627632,
+          "constructor": 629224,
+          "timer": 629240
+        },
+        "strings": {
+          "ch3": 626956,
+          "ch4": 626960,
+          "zero": 626964,
+          "percent": 626967
+        },
+        "native_hook_offsets": [
+          361740,
+          367332
+        ],
+        "new_owned_widgets": 6,
+        "new_timers": 0,
+        "new_global_ram_bytes": 0,
+        "row_y": [
+          202,
+          218,
+          234,
+          250,
+          266,
+          282
+        ],
+        "new_row_conversion": "clamp(raw,-2000,2000)*3/50, rounded symmetrically; no native 90/10 filter"
+      }
+    },
+    {
+      "variant": "clock192-usb1ms-ch123456",
+      "dashboard": "ch123456",
+      "default": false,
+      "options": [
+        "--usb-1ms",
+        "--dashboard",
+        "ch123456"
+      ],
+      "bytes": 629568,
+      "sha256": "cb8b9e6f3c3685f874709f93efc7a4b605c4f2384b6f456efbcf7b11570ffdc4",
+      "changed_existing_bytes": 25,
+      "appended_bytes": 2612,
+      "intended_cpu_mhz": 192,
+      "requested_usb_interval_ms": 1,
+      "portable_output_hardware_tested": false,
+      "reverts_to_original_file_exactly": true,
+      "dashboard_helper": {
+        "appendix_offset": 627232,
+        "appendix_bytes": 2336,
+        "functions": {
+          "convert": 627248,
+          "update": 627320,
+          "cleanup": 627828,
+          "layout": 627908,
+          "constructor": 629500,
+          "timer": 629516
+        },
+        "strings": {
+          "ch3": 627232,
+          "ch4": 627236,
+          "zero": 627240,
+          "percent": 627243
+        },
+        "native_hook_offsets": [
+          361740,
+          367332
+        ],
+        "new_owned_widgets": 6,
+        "new_timers": 0,
+        "new_global_ram_bytes": 0,
+        "row_y": [
+          202,
+          218,
+          234,
+          250,
+          266,
+          282
+        ],
+        "new_row_conversion": "clamp(raw,-2000,2000)*3/50, rounded symmetrically; no native 90/10 filter"
+      }
+    }
+  ],
+  "patcher_sha256": "1b4d8f6f80ccb9e94facbdfb0eab6d97ee12b73165bb2decabd4f222f3b07547"
+}

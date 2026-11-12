@@ -1,0 +1,5 @@
+# Optional Windows packaging tools, installed outside the source repository.
+# See https://pyinstaller.org/en/stable/installation.html for paired pinning.
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
+Pillow==12.3.0

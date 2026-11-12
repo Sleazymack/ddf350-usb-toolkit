@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "background": "#162d46",
+  "widgets": [
+    {"id": "g1", "channel": 1, "kind": "bar", "col": 0, "row": 0, "color": "#55b8f0"},
+    {"id": "g2", "channel": 2, "kind": "bar", "col": 0, "row": 1, "color": "#69d7d0"},
+    {"id": "g3", "channel": 3, "kind": "semicircle", "col": 4, "row": 0, "color": "#a794f4"},
+    {"id": "g4", "channel": 4, "kind": "semicircle", "col": 4, "row": 2, "color": "#f1bc61"},
+    {"id": "g5", "channel": 5, "kind": "bar", "col": 0, "row": 2, "color": "#7cc99c"},
+    {"id": "g6", "channel": 6, "kind": "bar", "col": 0, "row": 3, "color": "#ed8db1"}
+  ]
+}

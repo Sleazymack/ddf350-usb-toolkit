@@ -1,0 +1,14 @@
+{
+  "strip_drift": [
+    "c011d6532ebe20da3006f02bf36e3b7370d3fb0c518fae3ccbca2448583f58f1",
+    "1559b1dbdb37e86cd65ce0a8e7761eddef9c358e4849efdaff57eff2fee30eeb"
+  ],
+  "led_segments": [
+    "4e196c119b725ee75152b03b2b96e15fcdd45f44a7336deecaad722d50b58e81",
+    "a095d537b5cd0dbe4413b485fdce93493329e4262f37f3c720301161b7602f1f"
+  ],
+  "purple_drift": [
+    "83f0a85224f08739da418c9630510ae9f4e3b279d675257f0852c35db80e8e5f",
+    "0bcfcfad020d1c53887873ce9edde7f4a8a81b9fd3c9580345e3fa24a612937a"
+  ]
+}
