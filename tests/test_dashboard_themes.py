@@ -18,8 +18,8 @@ from test_dashboard_six import signed,RAM
 
 class ThemeContractTests(unittest.TestCase):
     def test_three_additional_presets_and_fixed_bounded_contract(self):
-        self.assertEqual(len(app.EDITIONS),6)
-        self.assertEqual(tuple(row[0] for row in app.EDITIONS[-3:]),t.THEMES)
+        self.assertEqual(len(app.EDITIONS),9)
+        self.assertEqual(tuple(row[0] for row in app.EDITIONS[3:6]),t.THEMES)
         for key in t.THEMES:
             spec=t.layout(key)
             self.assertEqual(c.parse_layout(c.canonical_json(spec)),spec)
@@ -40,13 +40,13 @@ class ThemeContractTests(unittest.TestCase):
             ui.step=2;ui.render();root.update()
             keys=[e[0] for e in app.EDITIONS]+['custom']
             for i,key in enumerate(keys):
-                self.assertEqual(ui.dashboard.get(),key);self.assertEqual(ui.gallery_count.cget('text'),f'{i+1:02} / 07')
+                self.assertEqual(ui.dashboard.get(),key);self.assertEqual(ui.gallery_count.cget('text'),f'{i+1:02} / {len(keys):02}')
                 ui.gallery_next.invoke()
             self.assertEqual(ui.dashboard.get(),'original')
             ui.gallery_prev.invoke();self.assertEqual(ui.dashboard.get(),'custom')
             ui.next();self.assertIsNotNone(ui.inline_editor);ui.previous();root.update()
             self.assertEqual(ui.dashboard.get(),'custom')
-            ui.scroll_gallery('moveto',0.45);self.assertEqual(ui.dashboard.get(),keys[3])
+            ui.scroll_gallery('moveto',3/len(keys));self.assertEqual(ui.dashboard.get(),keys[3])
             ui.gallery_canvas.event_generate('<MouseWheel>',delta=-120);root.update()
             self.assertEqual(ui.dashboard.get(),keys[4])
             ui.gallery_canvas.event_generate('<ButtonPress-1>',x=20,y=30)

@@ -19,10 +19,11 @@ class StartupPanel(tk.Frame):
         self.notice=None
         media=wizard.media_candidate or wizard.startup_media
         editing=bool(media or wizard.media_source or wizard.media_loading)
-        from startup_media import GIF_HELP
+        from startup_media import GIF_HELP,GIF_WARNING
         choices=tk.Frame(self,bg=BG)
         choices.grid(row=0,column=0,sticky='ew',pady=(0,4))
-        for col in (0,1):choices.columnconfigure(col,weight=1,uniform='choices')
+        compact=1<height<=360
+        for col in range(3 if compact else 2):choices.columnconfigure(col,weight=1,uniform='choices')
         narrow=1<wizard.root.winfo_width()<580
         self.original=self.button(choices,'Original' if narrow else 'Garder le démarrage d’origine',wizard.clear_startup_media,active=not editing)
         self.original.grid(row=0,column=0,sticky='ew',padx=(0,3))
@@ -30,10 +31,18 @@ class StartupPanel(tk.Frame):
                                 wizard.choose_startup_media,active=editing)
         self.choose.grid(row=0,column=1,sticky='ew',padx=(3,0))
         wizard.media_choose_button=self.choose
-        tk.Label(choices,text=tr(GIF_HELP),bg=BG,fg=INK,font=('Segoe UI',-max(11,self.px-2)),
-                 wraplength=max(300,wizard.root.winfo_width()-58),justify='left',anchor='w').grid(row=1,column=0,columnspan=2,sticky='ew',pady=(2,0))
+        if compact:
+            self.requirements=self.button(choices,'Prérequis GIF',self.show_requirements)
+            self.requirements.grid(row=0,column=2,sticky='ew',padx=(3,0))
+        else:
+            tk.Label(choices,text=tr(GIF_HELP),bg=BG,fg=INK,font=('Segoe UI',-max(11,self.px-3)),
+                     wraplength=max(300,wizard.root.winfo_width()-58),justify='left',anchor='w').grid(row=1,column=0,columnspan=2,sticky='ew',pady=(2,0))
+        self.gif_warning=tk.Label(choices,text=tr(GIF_WARNING),bg=BG,fg='#ffbd80',
+            font=('Segoe UI',-max(11,self.px-3)),wraplength=max(300,wizard.root.winfo_width()-58),
+            justify='left',anchor='w')
+        self.gif_warning.grid(row=1 if compact else 2,column=0,columnspan=3 if compact else 2,sticky='ew',pady=(3,1))
         if not editing:
-            tk.Label(self,text=tr('Photo centrée à 80 % · PNG, JPEG ou BMP.')+'\n'+tr('GIF facultatif et expérimental : un blocage reste possible.'),
+            tk.Label(self,text=tr('Photo centrée à 80 % · PNG, JPEG ou BMP.')+'\n'+tr('Prépare ton GIF avant l’importation. Les fichiers hors limites sont refusés.'),
                      bg=BG,fg=MUTED,font=self.font,wraplength=max(300,wizard.root.winfo_width()-58),anchor='nw',justify='left').grid(row=1,column=0,sticky='nsew')
             return
 
@@ -52,10 +61,10 @@ class StartupPanel(tk.Frame):
             if media.kind=='gif':
                 self.replay=self.button(preview,'Rejouer',wizard.start_startup_preview)
                 self.replay.grid(row=1,column=0,sticky='ew')
-        editor=tk.Frame(workspace,bg=PANEL);editor.grid(row=0,column=1,sticky='nsew',padx=6,pady=3)
+        editor=tk.Frame(workspace,bg=PANEL);editor.grid(row=0,column=1,sticky='nsew',padx=6,pady=1 if compact else 3)
         for col in (0,1):editor.columnconfigure(col,weight=1,uniform='setting')
         if media:
-            # The full filename and conversion information are accessible from
+            # The full filename and import requirements are accessible from
             # this button even when a long filename has been shortened to fit.
             self.file=self.button(editor,'',lambda:self.details(media))
             self.file.configure(anchor='w',fg=ACCENT,width=1)
@@ -64,18 +73,18 @@ class StartupPanel(tk.Frame):
         if media:
             i=media.info
             stats=('192 × 256 · RGB565' if media.kind=='photo' else
-                   f"{i['frames']} {tr('images')} · {i['duration_ms']/1000:g} s · {tr('16 couleurs')}")
+                   f"{i['width']} × {i['height']} · {i['frames']} {tr('images')} · {i['duration_ms']/1000:g} s")
             tk.Label(editor,text=stats,bg=PANEL,fg=MUTED,font=('Segoe UI',-max(11,self.px-1)),
                      anchor='w').grid(row=3,column=0,columnspan=2,sticky='ew',pady=(2,1))
         if wizard.media_loading:
-            action='Conversion du média…';command=None
+            action='Vérification du fichier…';command=None
             for btn in (self.original,self.choose,wizard.back,wizard.forward):btn.configure(state='disabled')
         elif wizard.media_pending:
-            action='Utiliser ce rendu'
+            action='Intégrer ce GIF' if media and media.kind=='gif' else 'Utiliser cette photo'
             command=wizard.use_startup_media if wizard.media_candidate_valid else None
             wizard.forward.configure(state='disabled')
         else:
-            action='Rendu sélectionné';command=None
+            action='Fichier sélectionné';command=None
         self.apply=self.button(editor,action,command,active=bool(command))
         self.apply.grid(row=4,column=0,columnspan=2,sticky='ew',pady=(3,0))
         if command is None:self.apply.configure(state='disabled',disabledforeground=MUTED)
@@ -96,10 +105,15 @@ class StartupPanel(tk.Frame):
 
     def details(self,media):
         i=media.info
-        from startup_media import GIF_HELP
+        from startup_media import GIF_HELP,GIF_WARNING,GIF_RECOVERY
         lines=[media.name, f"{i['width']} × {i['height']}",
                tr('Photo centrée à 80 % · PNG, JPEG ou BMP.') if media.kind=='photo' else tr(GIF_HELP)]
+        if media.kind=='gif':lines.extend((tr(GIF_WARNING),tr(GIF_RECOVERY)))
         messagebox.showinfo(tr('Détails du média'),'\n'.join(lines),parent=self.ui.root)
+
+    def show_requirements(self):
+        from startup_media import GIF_HELP,GIF_WARNING,GIF_RECOVERY
+        messagebox.showinfo(tr('Prérequis GIF'),'\n\n'.join(tr(value) for value in (GIF_HELP,GIF_WARNING,GIF_RECOVERY)),parent=self.ui.root)
 
     def show_notice(self,value):
         if self.notice:self.notice.destroy();self.notice=None

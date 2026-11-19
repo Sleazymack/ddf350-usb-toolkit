@@ -61,6 +61,13 @@ def _color(value):
 
 def validate_layout(layout):
     """Return a fresh canonical dictionary; unknown fields are rejected."""
+    if type(layout) is dict and type(layout.get('schema')) is int and layout['schema']==13:
+        from dashboard_gauges import validate
+        return validate(layout)
+    if type(layout) is dict and type(layout.get('schema')) is int and layout['schema']==15:
+        _keys(layout,('schema','native_dashboard'),'native dashboard alarm')
+        _require(type(layout['native_dashboard']) is str and layout['native_dashboard'] in ('original','ch1234','ch123456'),'Unknown native dashboard.')
+        return dict(layout)
     if type(layout) is dict and type(layout.get('schema')) is int and layout['schema']==12:
         minimal='header' in layout
         _keys(layout,('schema','background','widgets','wallpaper')+(('header',) if minimal else ()),'full home background')
@@ -75,7 +82,7 @@ def validate_layout(layout):
     if type(layout) is dict and type(layout.get('schema')) is int and layout['schema']==11:
         from dashboard_zones import validate
         return {**validate({**layout,'schema':2}),'schema':11}
-    if type(layout) is dict and layout.get('schema') in (5,7,8,9):
+    if type(layout) is dict and layout.get('schema') in (5,7,8,9,14):
         from dashboard_fullscreen import validate
         return validate(layout)
     if type(layout) is dict and layout.get('schema')==4:
@@ -132,7 +139,7 @@ def parse_layout(data):
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_pairs)
     except (ValueError, UnicodeError, RecursionError) as error:
         raise LayoutError("Invalid layout JSON.") from error
-    _require(len(raw)<=LAYOUT_MAX_BYTES or (isinstance(value,dict) and value.get("schema")==12 and value.get("wallpaper") is not None),"Layout JSON is too large.")
+    _require(len(raw)<=LAYOUT_MAX_BYTES or (isinstance(value,dict) and value.get("schema") in (12,13) and value.get("wallpaper") is not None),"Layout JSON is too large.")
     return validate_layout(value)
 
 
@@ -148,7 +155,7 @@ def current_layout(layout):
         return {**spec,'schema':11 if spec['schema']==2 else 10}
     if 'theme' in spec:
         from dashboard_fullscreen import layout as theme_layout
-        return theme_layout(spec['theme'])
+        return theme_layout(spec['theme'],blink_ch2=spec['schema']==14)
     return spec
 
 def rectangle(widget):
@@ -168,6 +175,9 @@ def widget_parts(widget):
     68 x 68 native object is clipped by its container; only angles 180..360
     are drawn. These same rectangles generate the firmware instructions.
     """
+    if 'background' in widget:
+        from dashboard_gauges import parts
+        return parts(widget)
     if 'zone' in widget:
         from dashboard_zones import parts
         return parts(widget)
@@ -247,7 +257,7 @@ def _tree(a, widgets, failure):
             _typed(a, 0, 6, reference, failure)
 
 
-def _update(address, widgets, convert, percent_format, header_refresh=None):
+def _update(address, widgets, convert, percent_format, header_refresh=None, converters=None):
     a = _Code(address)
     a.emit(0xB5F8)
     six._home_guard(a, "return")
@@ -264,7 +274,8 @@ def _update(address, widgets, convert, percent_format, header_refresh=None):
             a.call('arc_get_value')
         else:
             a.load_global(0, 0x20000200 + widget["channel"] * 4)
-            a.call(convert)
+            target=convert if converters is None else converters['primary' if widget['channel']<=2 else 'aux' if widget['channel']<=4 else 'other']
+            a.call(target)
         a.mov(5, 0)
         a.mov(0, 6)
         a.call("arc_get_value" if widget["kind"] == "semicircle" else "bar_get_value")
@@ -292,12 +303,14 @@ def _undecorated(a, parts=(0,)):
 
 
 def _layout(address, layout, strings, update, cleanup, header_create=None):
+    modern=layout['schema']==13
+    full=layout['schema']==12 or (modern and layout['full_background'])
     a = _Code(address)
     a.emit(0xB5F8)
     six._home_guard(a, "return")
     a.load_global(5, PANEL)
     _not_null(a, 5, "return")
-    if layout['schema']==12:
+    if full:
         a.load_global(0,ROOT);a.ldr(1,5,4);a.cmp_reg(1,0);a.jump('return',1)
     a.ldr(0, 5, 8)
     a.cmp(0, 0)
@@ -318,15 +331,22 @@ def _layout(address, layout, strings, update, cleanup, header_create=None):
         a.method("add_flag", HIDDEN)
         a.method("remove_style_all")
         a.method("clear_flag", NONINTERACTIVE_CLIPPED)
+        if modern:
+            a.method('bg_color',native_color(widget['background']),0)
+            a.method('style',0x21,255,0)
+            a.method('radius',5,0)
+            a.method('style',0x1032,1,0)
+            a.method('style',0x30,native_color(track_color(widget['color'],widget['background'])),0)
+            a.method('style',0x31,255,0)
         x,y,w,h=parts["container"]
-        a.box(x,y-170 if layout["schema"] in (6,10,12) else y,w,h)
+        a.box(x,y-170 if layout["schema"] in (6,10,12,13) else y,w,h)
         # Container owns gauge first, then title, then value.
         a.mov(0, 6)
         a.call("arc_create" if widget["kind"] == "semicircle" else "bar_create")
         a.mov(4, 0)
         _not_null(a, 4, "allocation_failed")
         foreground = native_color(widget["color"])
-        track = native_color(track_color(widget["color"], layout["background"]))
+        track = native_color(track_color(widget["color"], widget['background'] if modern else layout["background"]))
         a.method("clear_flag", NONINTERACTIVE_CLIPPED)
         if widget["kind"] != "semicircle":
             a.box(*parts["gauge"])
@@ -334,9 +354,10 @@ def _layout(address, layout, strings, update, cleanup, header_create=None):
             for part, color in ((0, track), (0x20000, foreground)):
                 a.method("bg_color", color, part)
                 a.method("style", 0x21, 255, part)
-            a.method("radius", 0, 0)
+            a.method("radius", 6 if modern else 0, 0)
+            if modern:a.method('radius',6,0x20000)
             a.method("bar_mode", 0 if widget['kind']=='battery' else 1)
-            a.method("bar_range", 0 if widget['kind']=='battery' else -120, 100 if widget['kind']=='battery' else 120)
+            a.method("bar_range", 0 if widget['kind']=='battery' else -100 if modern else -120, 100 if widget['kind']=='battery' or modern else 120)
             a.method("bar_value", 0, 0)
             if widget['kind']=='number':a.method('add_flag',HIDDEN)
             if widget['kind']=='battery':
@@ -345,7 +366,7 @@ def _layout(address, layout, strings, update, cleanup, header_create=None):
                 a.method('style',0x31,255,0)
         else:
             a.box(*parts["gauge"])
-            if layout['schema'] in (10,11,12):
+            if layout['schema'] in (10,11,12,13):
                 # The 2.0.5 arc constructor clears mode bits [2:1] in its
                 # own option word at +0x34. Set symmetrical mode (01)
                 # before configuring the sweep, preserving every other bit.
@@ -354,13 +375,13 @@ def _layout(address, layout, strings, update, cleanup, header_create=None):
             a.method("remove_style", 0, 0x30000)
             _undecorated(a)
             for part, color in ((0, track), (0x20000, foreground)):
-                a.method("style", 0x850, 4, part)
+                a.method("style", 0x850, parts['arc_width'], part)
                 a.method("style", 0x51, 1, part)
                 a.method("style", 0x52, color, part)
                 a.method("style", 0x53, 255, part)
             a.method("arc_bg_angles", 180, 360)
             a.method("arc_rotation", 0)
-            a.method("arc_range", -120, 120)
+            a.method("arc_range", -100 if modern else -120, 100 if modern else 120)
             a.method("arc_value", 0)
         for kind in ("title", "value"):
             a.mov(0, 6)
@@ -387,7 +408,7 @@ def _layout(address, layout, strings, update, cleanup, header_create=None):
         a.call(header_create);_not_null(a,0,'allocation_failed')
     a.mov(4, 5)
     a.method("bg_color", native_color(layout["background"]), 0)
-    if layout['schema']==12:
+    if full:
         # Verified 2.0.5: the native home owns this 240x320 root, and PANEL
         # is its opaque, lower 215x100 child. No changes to the widget tree.
         a.method('style',0x21,0,0)
@@ -426,7 +447,10 @@ def _layout(address, layout, strings, update, cleanup, header_create=None):
 
 def build_appendix(original, offset, layout):
     layout = validate_layout(layout)
-    if layout['schema'] in (5,7,8,9):
+    if layout['schema']==15:
+        from dashboard_blink import build_native
+        return build_native(original,offset,layout)
+    if layout['schema'] in (5,7,8,9,14):
         from dashboard_faces import build_appendix as build_face
         return build_face(original,offset,layout,full=True)
     if layout['schema']==4:
@@ -443,12 +467,12 @@ def build_appendix(original, offset, layout):
             ("zero", b"0%\0"), ("percent", b"%d%%\0")]:
         strings[name] = BASE + offset + len(code)
         code.extend(data)
-    if layout['schema'] in (2,6,10,11,12):
+    if layout['schema'] in (2,6,10,11,12,13):
         strings['battery']=BASE+offset+len(code);code.extend(b'BAT\0')
     while len(code) % 4:
         code.append(0)
 
-    if layout['schema']==12 and layout['wallpaper'] is not None:
+    if layout['schema'] in (12,13) and layout['wallpaper'] is not None:
         strings['wallpaper']=BASE+offset+len(code);code.extend(wallpaper.descriptor())
 
     def append(name, builder, *args):
@@ -465,9 +489,16 @@ def build_appendix(original, offset, layout):
         append('header_usb',full.usb_power_status,2,None)
         append('header_refresh',header.refresh,functions['header_usb'])
         append('header_create',header.create,layout['background'],desc)
-    append("convert", six._convert)
-    append("update", _update, layout["widgets"], functions["convert"], strings["percent"], functions.get("header_refresh"))
-    if layout['schema'] in (2,6,10,11,12):
+    converters=None
+    if layout['schema']==13:
+        from dashboard_fullscreen import channel_percent,PRIMARY_STOPS,AUX_STOPS
+        append('convert',channel_percent,*PRIMARY_STOPS)
+        append('convert_aux',channel_percent,*AUX_STOPS)
+        append('convert_other',channel_percent,2000,2000)
+        converters=dict(primary=functions['convert'],aux=functions['convert_aux'],other=functions['convert_other'])
+    else:append("convert", six._convert)
+    append("update", _update, layout["widgets"], functions["convert"], strings["percent"], functions.get("header_refresh"), converters)
+    if layout['schema'] in (2,6,10,11,12,13):
         def cleanup_v2(address):
             # Identical bounded ownership cleanup, with room for battery + CH1-6.
             code=bytearray(six._cleanup(address))
@@ -480,7 +511,12 @@ def build_appendix(original, offset, layout):
     else:append("cleanup", six._cleanup)
     append("layout", _layout, layout, strings, functions["update"], functions["cleanup"], functions.get("header_create"))
     append("constructor", six._constructor, functions["layout"])
-    append("timer", six._timer, functions["update"])
+    if layout['schema']==13 and layout['blink_ch2'] and any(w['channel']==2 for w in layout['widgets']):
+        import dashboard_blink as blink
+        append('set_hidden',blink.set_hidden)
+        append('blink',blink.custom,layout['widgets'],functions['set_hidden'])
+        append('timer',blink.timer,functions['update'],functions['blink'])
+    else:append("timer", six._timer, functions["update"])
     _require(len(code) <= MAX_APPENDIX_BYTES - LAYOUT_MAX_BYTES - 23,
              "Custom code exceeds its fixed size limit.")
     _require(BASE + offset + len(code) < 0x080F5000, "Custom code reaches the settings area.")
@@ -488,7 +524,7 @@ def build_appendix(original, offset, layout):
         six.HOOK_CONSTRUCTOR: six._branch(BASE + six.HOOK_CONSTRUCTOR, functions["constructor"], True),
         six.HOOK_TIMER: struct.pack("<I", functions["timer"] | 1),
     }
-    if layout['schema']==12 and layout['wallpaper'] is not None:
+    if layout['schema'] in (12,13) and layout['wallpaper'] is not None:
         _require(offset+len(code)<wallpaper.PLAYER_OFFSET,'Layout overlaps startup player.')
         code.extend(b'\xff'*(wallpaper.DATA_OFFSET-offset-len(code)))
         code.extend(wallpaper.raw(layout['wallpaper']))

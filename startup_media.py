@@ -1,4 +1,4 @@
-"""Bounded local startup media conversion and faithful asset previews; no USB."""
+"""Prepared GIF import and native static photo integration; no USB."""
 from dataclasses import dataclass
 import io
 import os
@@ -8,21 +8,13 @@ import warnings
 
 import startup_animation as animation
 import startup_photo as photo
-from startup.convert_gif import HEADER, MAGIC, encode_delta, decode_delta
+from startup.gif_import import (GIF_BYTES, GIF_MAX_FRAMES, GIF_MIN_MS, GIF_MAX_MS,
+                               GIF_MAX_DURATION, GIF_HELP, GIF_WARNING, GIF_RECOVERY,
+                               GIF_TIMING, GIF_SIZE, GIF_COUNT, prepared_asset)
 
 MAX_SOURCE_BYTES=25*1024*1024
 MAX_SOURCE_EDGE=4096
 MAX_SOURCE_PIXELS=8*1024*1024
-# Decimal kB: 280,000 bytes is already over the limit.
-GIF_BYTES=280_000
-GIF_MAX_FRAMES=20
-GIF_MIN_MS=200
-GIF_MAX_MS=1000
-GIF_MAX_DURATION=4000
-GIF_HELP='GIF : moins de 280 Ko, 5 images/s maximum, 4 s maximum (2 à 20 images).'
-GIF_TIMING='Chaque image du GIF doit durer entre 200 et 1 000 ms (5 images/s maximum).'
-GIF_SIZE='Le GIF doit faire moins de 280 Ko (280 000 octets), avant et après conversion.'
-GIF_COUNT='Le GIF doit contenir 2 à 20 images et durer 4 secondes maximum.'
 FORMATS={'GIF','PNG','JPEG','BMP'}
 
 
@@ -97,40 +89,10 @@ def from_bytes(blob,*,name='media'):
                     pixels=b''.join(struct.pack('>H',(r>>3)<<11 | (g>>2)<<5 | b>>3) for r,g,b in zip(rgb[0::3],rgb[1::3],rgb[2::3]))
                     return Media(pixels,str(name),'photo')
                 if len(blob)>=GIF_BYTES:raise ValueError(GIF_SIZE)
-                frames=[];durations=[];total_pixels=0
-                for index in range(GIF_MAX_FRAMES+1):
-                    try:image.seek(index)
-                    except EOFError:break
-                    check_size()
-                    if index==GIF_MAX_FRAMES:raise ValueError(GIF_COUNT)
-                    total_pixels+=image.width*image.height
-                    if total_pixels>64*1024*1024:raise ValueError('Le GIF décompressé dépasse 64 mégapixels.')
-                    dt=image.info.get('duration')
-                    if type(dt) is not int or not GIF_MIN_MS<=dt<=GIF_MAX_MS:raise ValueError(GIF_TIMING)
-                    durations.append(dt)
-                    if sum(durations)>GIF_MAX_DURATION:raise ValueError(GIF_COUNT)
-                    area=Image.new('RGB',(240,275))
-                    area.paste(fitted(image),(24,32-22))
-                    frames.append(area.resize((96,110),Image.Resampling.LANCZOS))
-                if len(frames)<2:raise ValueError(GIF_COUNT)
+                asset=prepared_asset(image)
     except (UnidentifiedImageError,Image.DecompressionBombError,Image.DecompressionBombWarning,OSError,EOFError) as error:
         raise ValueError('Le fichier image est illisible, incomplet ou trop grand.') from error
-    w,h=frames[0].size
-    sheet=Image.new('RGB',(w,h*len(frames)))
-    for idx,frame in enumerate(frames):sheet.paste(frame,(0,h*idx))
-    palette=sheet.quantize(colors=16,method=Image.Quantize.MEDIANCUT)
-    values=bytes(palette.getpalette()[:48]).ljust(48,b'\0')
-    colors=b''.join(struct.pack('<H',(r>>3)<<11 | (g>>2)<<5 | b>>3) for r,g,b in zip(values[::3],values[1::3],values[2::3]))
-    result=bytearray(HEADER.pack(MAGIC,w,h,len(frames),16,w*h//2)+colors)
-    prior=bytes(w*h//2)
-    for frame,dt in zip(frames,durations):
-        indexed=frame.quantize(palette=palette,dither=Image.Dither.NONE).tobytes()
-        if max(indexed)>15:raise ValueError('Palette invalide.')
-        packed=bytes((hi<<4)|lo for hi,lo in zip(indexed[::2],indexed[1::2]))
-        delta=encode_delta(prior,packed)
-        if decode_delta(prior,delta)!=packed:raise ValueError('Échec de vérification du média converti.')
-        result+=struct.pack('<HI',dt,len(delta))+delta;prior=packed
-    asset=bytes(result);validate_new_animation(asset)
+    validate_new_animation(asset)
     return Media(asset,str(name),'gif')
 
 
@@ -156,7 +118,13 @@ def preview_cycle(asset):
         palette.append(((r<<3)|(r>>2),(g<<2)|(g>>4),(b<<3)|(b>>2)))
     result=[]
     for packed in data['frames']:
-        colors=[palette[n] for value in packed for n in (value>>4,value&15)]
+        if palette:
+            colors=[palette[n] for value in packed for n in (value>>4,value&15)]
+        else:
+            colors=[]
+            for value, in struct.iter_unpack('<H',packed):
+                r=value>>11;g=(value>>5)&63;b=value&31
+                colors.append(((r<<3)|(r>>2),(g<<2)|(g>>4),(b<<3)|(b>>2)))
         screen=Image.new('RGB',(240,320),'black')
         area=Image.new('RGB',(240,275))
         area.putdata([colors[(y*h//275)*w+x*w//240] for y in range(275) for x in range(240)])

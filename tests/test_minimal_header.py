@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import tkinter as tk
 import dashboard_custom as c,dashboard_header as h,dashboard_wallpaper as wp, dashboard_fullscreen as lcd
+import dashboard_gauges
 import patch_firmware as p, editor
 from test_dashboard_wallpaper import design
 import test_fullscreen_dashboard as full
@@ -25,10 +26,10 @@ class EditorTests(unittest.TestCase):
             spec=design();ui=editor.DashboardEditor(root,layout=spec,compact=True)
             self.assertFalse(ui.minimal_header.get());ui.header_check.invoke()
             chosen=ui.get_layout()
-            self.assertEqual(chosen,{**spec,'header':'battery_only'})
+            self.assertEqual(chosen,{**dashboard_gauges.upgrade(spec),'header':'battery_only'})
             ui.set_layout(c.parse_layout(c.canonical_json(chosen)))
             self.assertTrue(ui.canvas.find_withtag('wallpaper'));self.assertEqual(len(ui.canvas.find_withtag('mini_battery')),3)
-            ui.header_check.invoke();self.assertEqual(ui.get_layout(),spec)
+            ui.header_check.invoke();self.assertEqual(ui.get_layout(),dashboard_gauges.upgrade(spec))
             self.assertFalse(ui.canvas.find_withtag('mini_battery'))
             with self.assertRaises(ValueError):c.validate_layout({**spec,'header':'other'})
         finally:root.destroy()

@@ -100,7 +100,7 @@ class FullscreenTests(unittest.TestCase):
                 self.assertTrue(all(q.objects[ch]['alive'] and not(q.objects[ch]['flags']&1) for ch in q.stock))
 
     def test_reproduce_report_on_065_and_replay_same_inputs_on_fixed_themes(self):
-        for key in lcd.THEMES:
+        for key in faces.THEMES:
             for fast in (False,True):
                 for schema,before in ((5,True),(7,False),(8,False),(9,False)):
                     im=p.build_patch(self.original,dashboard='custom',layout={'schema':schema,'theme':key},usb_1ms=fast)
@@ -131,7 +131,7 @@ class FullscreenTests(unittest.TestCase):
         from test_installer import raw_fixture
         from test_installer_switching import windows_prefix
         from test_startup_animation import asset
-        for key in lcd.THEMES:
+        for key in faces.THEMES:
             for fast in (False,True):
                 old=p.build_patch(self.original,dashboard='custom',layout={'schema':5,'theme':key},usb_1ms=fast)
                 saved=json.loads(Path(__file__).with_name('legacy-065-faces.json').read_text())

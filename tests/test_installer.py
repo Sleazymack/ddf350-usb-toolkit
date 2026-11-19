@@ -118,6 +118,26 @@ class TransferTests(unittest.TestCase):
                 self.assertEqual(dev.writes,list(offsets[:failure]))
                 self.assertEqual(dev.raw[:i.APP],before[:i.APP])
 
+    def test_status_file_open_and_reporting_denied_do_not_interrupt_writes(self):
+        before=raw_fixture(self.original)
+        expected,offsets,_=i.plan_transfer(before,self.target,self.original)
+        self.assertGreater(len(offsets),1)
+        with tempfile.TemporaryDirectory() as folder:
+            directory=Path(folder)
+            old=directory/'status.json';old.write_bytes(b'old')
+            (directory/'status.tmp').write_bytes(b'interrupted')
+            real_append=i.append_log
+            def busy_log(directory,phase,message):
+                if phase=='writing':raise PermissionError('Windows sharing conflict')
+                return real_append(directory,phase,message)
+            dev=FakeDevice(before)
+            with old.open('rb') as reader,mock.patch.object(i,'runs_root',return_value=directory),mock.patch.object(i,'append_log',side_effect=busy_log):
+                i.transfer(dev,self.target,self.original,directory,lambda phase,msg:i.status(directory,phase,msg))
+                self.assertEqual(reader.read(),b'old')
+            self.assertEqual(dev.writes,list(offsets));self.assertEqual(bytes(dev.raw),expected)
+            self.assertEqual((directory/'avant-raw.bin').read_bytes(),before)
+            self.assertIn('Relecture finale',(directory/'journal.jsonl').read_text(encoding='utf-8'))
+
     def test_unknown_current_or_corrupt_target_never_write(self):
         for current,target in ((b'unknown',self.target),(self.original,self.target[:-1]+b'x')):
             with tempfile.TemporaryDirectory() as folder:
@@ -157,9 +177,13 @@ class TransferTests(unittest.TestCase):
                      mock.patch.object(i,'transfer',side_effect=failure), \
                      mock.patch.object(i,'powershell',side_effect=presence), \
                      mock.patch.object(i.time,'sleep'):
-                    i.run_job(directory,self.original)
+                    # Deny all progress log writes, including error diagnostics.
+                    # Device errors must still reach the UI and the process result.
+                    with mock.patch.object(i,'append_log',side_effect=PermissionError('log busy')):
+                        self.assertEqual(i.run_job(directory,self.original),failure is None)
                 self.assertEqual(events,['query','query','close'])
-                self.assertEqual(json.loads((directory/'status.json').read_text())['phase'],'error' if failure else 'done')
+                self.assertEqual(i.terminal_status(directory)['phase'],'error' if failure else 'done')
+                self.assertTrue((directory/('error_unplug.json' if failure else 'unplug.json')).is_file())
 
     def test_identity_change_after_lock_prevents_transfer_and_retains_lock(self):
         identity={'letter':'G','disk':4,'usb':'USB\\VID_0483&PID_5720\\TEST','serial':'TEST'}

@@ -23,6 +23,9 @@ SIGNED_CHARS=CHARS+'+'
 def face_bank(full,signed,native=False):
     if native:
         from dashboard_native_assets import FACES as faces
+        from dashboard_extra_assets import FACES as extra
+        from dashboard_extra_assets_v074 import FACES as legacy_extra
+        return {**faces, **legacy_extra, **extra}
     elif signed:
         from dashboard_signed_assets import FACES as faces
     elif full:
@@ -74,19 +77,21 @@ def scene(key,full=False,signed=False,native=False,centered=False):
         img(part['sprite'],part['x'],part['y'],channel=part['channel'],role='segment',threshold=threshold,hidden=threshold>0)
     for ch in range(5):
         leaves.append(dict(kind='bar',box=tuple(face['battery']) if ch==0 else (0,0,1,1),channel=ch,
-                           role='cache',color='#9bea28',hidden=bool(ch)))
+                           role='cache',color=face.get('battery_color','#9bea28'),hidden=bool(ch)))
     if native:
         leaves.append(dict(kind='bar',box=(0,0,1,1),channel=-1,role='usb_frames',color='#000000',hidden=True))
-        img('usb',209,8,role='usb_source',hidden=True)
+        img('usb',*face.get('usb_position',(209,8)),role='usb_source',hidden=True)
         for hand in face['hands']:
             name,dx,dy=hand['frames'][50]
             img(name,hand['cx']+dx,hand['cy']+dy,role='bitmap_needle',channel=hand['channel'],hand=hand)
             img(hand['hub'],hand['cx']-4,hand['cy']-4)
     for ch,geom in enumerate(face['needles'],3):
         leaves.append(dict(kind='line',box=(0,0,W,H),channel=ch,role='needle',geom=geom,
-                           width=2,color='#fa69ff' if ch==3 else '#c1ff37',initial_index=50 if signed else 0))
-        cx,cy,_,_=geom
-        leaves.append(dict(kind='obj',box=(cx-2,cy-2,5,5),color='#824195' if ch==3 else '#738c26',radius=3))
+                           width=face.get('needle_width',2),color=face.get('needle_color','#fa69ff' if ch==3 else '#c1ff37'),initial_index=50 if signed else 0))
+        cx,cy=geom[:2]
+        hub=face.get('needle_hubs',{}).get(str(ch))
+        if hub:img(hub,cx-4,cy-4)
+        else:leaves.append(dict(kind='obj',box=(cx-2,cy-2,5,5),color='#824195' if ch==3 else '#738c26',radius=3))
     for ch in range(5):
         x,y,w,h,slots=face['digits'][str(ch)]
         for i,s in enumerate(str(0).rjust(slots)+'%'):
@@ -95,7 +100,9 @@ def scene(key,full=False,signed=False,native=False,centered=False):
     return leaves
 
 def points(geom,value):
-    cx,cy,rx,ry=geom;angle=math.radians(140+260*value/100)
+    cx,cy,rx,ry=geom[:4]
+    start,sweep=geom[4:] if len(geom)==6 else (140,260)
+    angle=math.radians(start+sweep*value/100)
     return (cx,cy,round(cx+rx*math.cos(angle)),round(cy+ry*math.sin(angle)))
 
 def checked_tree(a,leaves,failure,table):
@@ -172,9 +179,9 @@ def update(addr,leaves,converter,tables,full=False,signed=False):
     a.mark('return');a.emit(0xbdf8);return a.finish()
 
 def build_appendix(original,offset,spec,*,full=False):
-    centered=spec.get('schema')==9
-    native=spec.get('schema') in (8,9)
-    signed=spec.get('schema') in (7,8,9)
+    centered=spec.get('schema') in (9,14)
+    native=spec.get('schema') in (8,9,14)
+    signed=spec.get('schema') in (7,8,9,14)
     if full:
         import dashboard_fullscreen as lcd
         faces=face_bank(full,signed,native)
@@ -243,7 +250,14 @@ def build_appendix(original,offset,spec,*,full=False):
         append('cleanup',six._cleanup)
         append('layout',t.construct,leaves,{},tables,fn['update'],fn['cleanup'],
                check_tree=lambda a,l,f:checked_tree(a,l,f,tables['classes']),background='#000000')
-    append('constructor',six._constructor,fn['layout']);append('timer',six._timer,fn['update'])
+    append('constructor',six._constructor,fn['layout'])
+    if spec.get('schema')==14:
+        import dashboard_blink as blink
+        append('set_hidden',blink.set_hidden)
+        levels=data(bytes(center_edge(value) for value in range(-100,101)))
+        append('blink',blink.faces,leaves,fn['set_hidden'],tables['classes'],levels)
+        append('timer',blink.timer,fn['update'],fn['blink'])
+    else:append('timer',six._timer,fn['update'])
     end=offset+len(code)+len(c.make_trailer(spec,True))
     c._require(end<PLAYER_OFFSET,f'Artwork overlaps startup media: {end} >= {PLAYER_OFFSET}.')
     repl={six.HOOK_CONSTRUCTOR:six._branch(six.BASE+six.HOOK_CONSTRUCTOR,fn['constructor'],True),
@@ -259,13 +273,14 @@ def bitmap(key,name,full=False,signed=False,native=False):
     out.putdata([pal[(raw[y*stride+x*bits//8]>>(8-bits-x*bits%8))&(n-1)] for y in range(h) for x in range(w)])
     return out
 
-def render(key,values=None,full=False,signed=False,native=False,usb_active=False,centered=False):
+def render(key,values=None,full=False,signed=False,native=False,usb_active=False,centered=False,alarm_off=False):
     """Draw the same indexed sprites, in the same positions, as the radio."""
     from PIL import Image,ImageDraw
     val={**SAMPLE,**(values or {})};im=Image.new('RGBA',(240,320) if full else (215,270),'black');draw=ImageDraw.Draw(im)
     if native and usb_active:val[0]=100
     for item in scene(key,full,signed,native,centered):
         x,y,w,h=item['box'];role=item.get('role');ch=item.get('channel')
+        if alarm_off and val[2]>90 and ch==2 and role in ('digit','percent','segment'):continue
         if item['kind']=='img':
             name=item['sprite']
             if role=='usb_source' and not usb_active:continue

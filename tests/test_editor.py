@@ -17,6 +17,7 @@ HAVE_TK = importlib.util.find_spec("tkinter") is not None
 if HAVE_TK:
     import tkinter as tk
     import dashboard_custom
+    import dashboard_gauges
     import editor
     import patch_firmware
 
@@ -56,7 +57,7 @@ class DashboardEditorTests(unittest.TestCase):
                                y=self.ui.origin[1] + y * self.ui.scale)
 
     def test_default_geometry_and_colors_follow_backend_contract(self):
-        self.assertEqual(self.ui.get_layout(), dashboard_custom.validate_layout(editor.DEFAULT_LAYOUT))
+        self.assertEqual(self.ui.get_layout(), dashboard_gauges.upgrade(editor.DEFAULT_LAYOUT))
         self.assertEqual(editor.widget_bounds({"kind": "bar", "col": 0, "row": 0}),
                          (20, 200, 163, 225))
         self.assertEqual(editor.widget_bounds({"kind": "semicircle", "col": 4, "row": 2}),
@@ -123,7 +124,7 @@ class DashboardEditorTests(unittest.TestCase):
         self.ui._motion(target)
         self.assertEqual((self.ui._proposal["col"], self.ui._proposal["row"]), (1, 1))
         self.assertIsNone(self.ui._proposal_error)
-        self.assertEqual(self.ui.get_layout(), dashboard_custom.validate_layout(ONE_GAUGE))
+        self.assertEqual(self.ui.get_layout(), dashboard_gauges.upgrade(ONE_GAUGE))
         self.assertEqual(self.changes, [], "Preview must not notify the application")
         self.ui._release(target)
         placed = self.ui.get_layout()["widgets"][0]
@@ -160,7 +161,7 @@ class DashboardEditorTests(unittest.TestCase):
         added = next(widget for widget in widgets if widget["channel"] == 2)
         self.assertEqual((added["kind"], added["col"], added["row"]), ("semicircle", 4, 0))
         self.assertTrue(self.ui.delete_selected())
-        self.assertEqual(self.ui.get_layout(), dashboard_custom.validate_layout(ONE_GAUGE))
+        self.assertEqual(self.ui.get_layout(), dashboard_gauges.upgrade(ONE_GAUGE))
 
     def test_json_round_trip_and_existing_export_is_preserved(self):
         self.ui.set_layout(ONE_GAUGE)
@@ -178,7 +179,7 @@ class DashboardEditorTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), original_bytes)
             with mock.patch.object(editor.filedialog, "askopenfilename", return_value=str(output)):
                 self.ui.import_json()
-            self.assertEqual(self.ui.get_layout(), dashboard_custom.validate_layout(ONE_GAUGE))
+            self.assertEqual(self.ui.get_layout(), dashboard_gauges.upgrade(ONE_GAUGE))
 
     def test_bad_or_oversized_json_preserves_current_layout(self):
         original = self.ui.get_layout()

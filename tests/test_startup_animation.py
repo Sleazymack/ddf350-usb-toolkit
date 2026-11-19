@@ -36,7 +36,7 @@ def asset(frames=4,duration=100):
 
 def loop_asset():
     """Sparse first frame leaves the previous cycle's last pixel to be cleared."""
-    from startup.convert_gif import encode_delta
+    from startup.gif_codec import encode_delta
     source=asset(10,50)
     blob=bytearray(anim.LOOP_MAGIC+source[8:52])
     previous=bytes(128)

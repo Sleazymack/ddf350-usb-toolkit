@@ -1,5 +1,5 @@
 {
-  "tool_version": "0.7.1-experimental",
+  "tool_version": "0.7.7-experimental",
   "hardware": "DDF-350 HW 1.0",
   "required_original": {
     "firmware": "DumboRC DDF-350 official 2.0.5",
@@ -41,15 +41,28 @@
         20
       ],
       "max_duration_ms": 4000,
-      "embedded_colors": 16,
       "repeat_count": 1,
-      "hardware_validated": false
+      "hardware_validated": false,
+      "min_width": 16,
+      "max_width": 128,
+      "width_even": true,
+      "min_height": 16,
+      "max_height": 160,
+      "palette_color_limit": null,
+      "display_format": "RGB565",
+      "native_display_colors": 65536,
+      "automatic_resize": false,
+      "automatic_palette_reduction": false,
+      "converter_available": false,
+      "max_rgb565_frame_buffer_bytes": 40960,
+      "risk": "GIFs can crash or freeze the transmitter even when all prerequisites are met."
     },
     "included_presets": [],
     "player_versions_recognized": [
       1,
       2,
-      3
+      3,
+      4
     ],
     "docs": "docs/startup-media.md"
   },
@@ -68,7 +81,8 @@
   "startup_player_versions": [
     1,
     2,
-    3
+    3,
+    4
   ],
   "default_startup": "original",
   "startup_media_hardware_validated": false,
@@ -239,5 +253,50 @@
       }
     }
   ],
-  "patcher_sha256": "1b4d8f6f80ccb9e94facbdfb0eab6d97ee12b73165bb2decabd4f222f3b07547"
+  "patcher_sha256": "ad551b09f56bf0eb58c427980742c940121b1c69fedc6d0758d30d0aae0f24dd",
+  "official_update": {
+    "target": "official-2.0.5",
+    "target_bytes_unchanged": true,
+    "accepted_stock_sources": [
+      "1.2.0",
+      "2.0.5"
+    ],
+    "recognized_modified_205_sources": true,
+    "requires_hw": "1.0",
+    "bootloader_modified": false,
+    "hardware_validated": false
+  },
+  "dashboard_presets": [
+    "original",
+    "ch1234",
+    "ch123456",
+    "strip_drift",
+    "led_segments",
+    "purple_drift",
+    "equalizer_gold_v2",
+    "classic_chrome_v2",
+    "neon_hex_v2"
+  ],
+  "legacy_dashboard_presets": [
+    "equalizer_gold",
+    "classic_chrome",
+    "neon_hex"
+  ],
+  "gauge_style": {
+    "schema": 13,
+    "solid_background_per_widget": true,
+    "semicircle_width_pixels": 8,
+    "bar_height_pixels": 12,
+    "hardware_validated": false
+  },
+  "ch2_alarm": {
+    "optional": true,
+    "default_enabled": false,
+    "threshold": 90,
+    "comparison": "strictly greater than",
+    "half_period_ms": 125,
+    "new_timers": 0,
+    "new_global_ram_bytes": 0,
+    "hardware_validated": false
+  }
 }

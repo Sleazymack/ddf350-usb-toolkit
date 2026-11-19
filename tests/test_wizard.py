@@ -74,6 +74,36 @@ class WizardTests(unittest.TestCase):
             self.assertEqual(len(self.ui.log_lines),1)
             self.assertIn('Sauvegarde vérifiée',self.ui.log_view.get('1.0','end'))
             self.assertEqual(str(self.ui.log_view.cget('state')),'disabled')
+            self.assertEqual(self.ui.last_phase,'checking')
+
+    def test_terminal_receipt_without_journal_and_nonzero_exit(self):
+        self.ui.step=6;self.ui.render()
+        with tempfile.TemporaryDirectory() as folder:
+            self.ui.job_directory=directory=Path(folder)
+            self.ui.worker_handle=123;self.ui.busy=True
+            with mock.patch.object(wizard.installer,'runs_root',return_value=directory), \
+                 mock.patch.object(wizard.installer,'append_log',side_effect=PermissionError('log locked')), \
+                 mock.patch.object(wizard.installer,'worker_exit_code',side_effect=[None,1]), \
+                 mock.patch.object(wizard.installer,'close_process'):
+                wizard.installer.status(directory,'error_unplug','Débrancher')
+                self.ui.poll()
+                self.assertTrue(self.ui.busy);self.assertEqual(self.ui.last_phase,'error_unplug')
+                wizard.installer.status(directory,'error','Erreur de relecture')
+                self.ui.poll()
+                self.assertFalse(self.ui.busy);self.assertEqual(self.ui.step,6)
+                self.assertIn('Erreur de relecture',self.ui.status.get())
+
+    def test_final_journal_entry_alone_advances_only_on_successful_exit(self):
+        self.ui.step=6;self.ui.render()
+        with tempfile.TemporaryDirectory() as folder:
+            self.ui.job_directory=directory=Path(folder)
+            self.ui.worker_handle=123;self.ui.busy=True
+            with mock.patch.object(wizard.installer,'runs_root',return_value=directory), \
+                 mock.patch.object(wizard.installer,'worker_exit_code',return_value=0), \
+                 mock.patch.object(wizard.installer,'close_process'):
+                wizard.installer.append_log(directory,'done','Transfert terminé.')
+                self.ui.poll()
+                self.assertFalse(self.ui.busy);self.assertEqual(self.ui.step,7)
 
     def test_error_is_visible_in_embedded_log(self):
         self.ui.step=6;self.ui.render()

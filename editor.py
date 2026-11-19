@@ -10,6 +10,7 @@ import copy
 import json
 import math
 import re
+import time
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
 import i18n
@@ -90,7 +91,7 @@ def validate_editor_layout(layout):
     """Use the canonical backend contract when present; never import a flasher."""
     # The UI validation supplies French explanations; the backend remains the
     # authority for every accepted layout when it is available.
-    if type(layout) is dict and layout.get('schema') in (6,12):
+    if type(layout) is dict and layout.get('schema') in (6,12,13):
         from dashboard_custom import validate_layout
         return copy.deepcopy(validate_layout(layout))
     candidate = _fallback_validate(copy.deepcopy(layout))
@@ -160,9 +161,13 @@ class DashboardEditor(tk.Frame):
         self.theme = tk.StringVar(master=self,value=tr("Bleu drift"))
         self.selection = tk.StringVar(master=self)
         self.minimal_header=tk.BooleanVar(master=self,value=False)
+        self.alarm_enabled=tk.BooleanVar(master=self,value=self._layout.get('blink_ch2',False))
+        self._blink_after=None
         self._build()
         self._sync_controls()
         self.redraw()
+        self.bind('<Destroy>',self._destroy_preview,add='+')
+        self._schedule_alarm_preview()
 
     def get_layout(self):
         """Return a detached canonical dictionary, or raise on invalid layout."""
@@ -178,8 +183,9 @@ class DashboardEditor(tk.Frame):
             old=validate(layout)
             bottom=[w for w in old['widgets'] if w['zone']=='B']
             if not bottom:raise ValueError(tr('Cette ancienne composition ne contient aucun bloc dans B.'))
-            return validate_editor_layout({**old,'schema':6,'widgets':bottom})
-        return validate_editor_layout(layout)
+            layout={**old,'schema':6,'widgets':bottom}
+        from dashboard_gauges import upgrade
+        return upgrade(validate_editor_layout(layout))
 
     def set_layout(self, layout):
         """Atomically replace the layout; rejected imports leave it untouched."""
@@ -260,6 +266,14 @@ class DashboardEditor(tk.Frame):
                                       relief="flat", padx=10, pady=6)
         self.color_button.pack(fill="x", pady=(0, 5))
         wrap_to_parent(self.color_button,panel,16)
+        self.panel_color_button=self._button(panel,text=tr('Fond uni de cette jauge…'),command=self.choose_panel_color)
+        self.panel_color_button.pack(fill='x',pady=(0,5))
+        self.alarm_checkbox=tk.Checkbutton(panel,text=tr('Faire clignoter CH2 au-dessus de +90'),
+                                          variable=self.alarm_enabled,command=self.change_alarm,
+                                          bg=UI_PANEL,fg=UI_TEXT,selectcolor=UI_BG,activebackground=UI_PANEL,
+                                          activeforeground=UI_TEXT,font=('Segoe UI',9),justify='left',anchor='w')
+        self.alarm_checkbox.pack(fill='x',pady=(0,5))
+        wrap_in_control(self.alarm_checkbox)
         arrows = tk.Frame(panel, bg=UI_PANEL)
         arrows.pack(pady=4,fill='x')
         for text, col, row, dx, dy in (("←", 0, 0, -1, 0), ("↑", 1, 0, 0, -1), ("↓", 2, 0, 0, 1), ("→", 3, 0, 1, 0)):
@@ -303,7 +317,8 @@ class DashboardEditor(tk.Frame):
     def _sync_controls(self):
         widgets = self._layout["widgets"]
         self.minimal_header.set(self._layout.get('header')=='battery_only')
-        if self._layout['schema']==12:
+        self.alarm_enabled.set(self._layout.get('blink_ch2',False))
+        if self._layout.get('full_background') or self._layout['schema']==12:
             self.theme.set(tr('Photo') if self._layout['wallpaper'] else
                            tr(next((name for name,(color,_) in THEMES.items() if color==self._layout['background']),'Couleur unie')))
         else:self.theme.set(tr(next((name for name,(color,_) in THEMES.items() if color==self._layout['background']),'Bleu drift')))
@@ -315,9 +330,12 @@ class DashboardEditor(tk.Frame):
         self.widget_combo.current(self._widget_ids.index(self._selected))
         self.channel.set('BAT' if widget['channel']==0 else f"CH{widget['channel']}")
         self.channel_combo.configure(state='disabled' if widget['kind']=='battery' else 'readonly')
-        self.kind_combo.configure(values=[tr(KIND_NAMES[k]) for k in (('battery',) if widget['kind']=='battery' else ('bar','semicircle','number') if self._layout['schema'] in (6,12) else ('bar','semicircle'))])
+        self.kind_combo.configure(values=[tr(KIND_NAMES[k]) for k in (('battery',) if widget['kind']=='battery' else ('bar','semicircle','number') if self._layout['schema'] in (6,12,13) else ('bar','semicircle'))])
         self.kind.set(tr(KIND_NAMES[widget["kind"]]))
         self.color_button.configure(bg=widget["color"], fg="#101924", activebackground=widget["color"])
+        rgb=[int(widget['background'][index:index+2],16) for index in (1,3,5)]
+        ink='#101924' if (299*rgb[0]+587*rgb[1]+114*rgb[2])>=128000 else UI_TEXT
+        self.panel_color_button.configure(bg=widget['background'],fg=ink,activebackground=widget['background'])
 
     def _message(self, text, error=False):
         self.status.set(text)
@@ -329,6 +347,7 @@ class DashboardEditor(tk.Frame):
         self._layout = canonical
         self._sync_controls()
         self.redraw()
+        self._schedule_alarm_preview()
         self._message(message)
         if changed and self.onchange is not None:
             self.onchange(copy.deepcopy(canonical))
@@ -374,9 +393,36 @@ class DashboardEditor(tk.Frame):
         if color:
             self._attempt(self._edited(color=color), "Couleur de la jauge modifiée.")
 
+    def choose_panel_color(self):
+        widget=self._selected_widget()
+        color=colorchooser.askcolor(widget['background'],title=tr('Fond uni de cette jauge…'),parent=self.winfo_toplevel())[1]
+        if color:self._attempt(self._edited(background=color),'Fond uni de la jauge modifié.')
+
+    def change_alarm(self):
+        candidate=copy.deepcopy(self._layout)
+        candidate['blink_ch2']=self.alarm_enabled.get()
+        self._attempt(candidate,'Option de clignotement CH2 modifiée.')
+
+    def _schedule_alarm_preview(self):
+        if self._blink_after is not None:
+            self.after_cancel(self._blink_after)
+            self._blink_after=None
+        if self.alarm_enabled.get() and any(widget['channel']==2 for widget in self._layout['widgets']):
+            self._blink_after=self.after(125,self._animate_alarm)
+
+    def _animate_alarm(self):
+        self._blink_after=None
+        self.redraw()
+        self._schedule_alarm_preview()
+
+    def _destroy_preview(self,event):
+        if event.widget is self and self._blink_after is not None:
+            self.after_cancel(self._blink_after)
+            self._blink_after=None
+
     def full_background(self,photo=None):
         candidate=copy.deepcopy(self._layout)
-        candidate.update(schema=12,wallpaper=photo)
+        candidate.update(full_background=True,wallpaper=photo)
         for widget in candidate['widgets']:widget['zone']='B'
         return candidate
 
@@ -399,8 +445,10 @@ class DashboardEditor(tk.Frame):
             messagebox.showerror(tr('Photo de fond…'),tr(str(error)),parent=self.winfo_toplevel())
 
     def stock_background(self):
-        if self._layout['schema']!=12:return
-        candidate=copy.deepcopy(self._layout);candidate.pop('wallpaper');candidate.pop('header',None);candidate['schema']=6
+        if not self._layout.get('full_background'):return
+        candidate=copy.deepcopy(self._layout)
+        candidate.update(full_background=False,wallpaper=None)
+        candidate.pop('header',None)
         from dashboard_zones import DEFAULT_LOWER
         candidate['background']=DEFAULT_LOWER['background']
         self._attempt(candidate,'Fond par défaut rétabli.')
@@ -463,7 +511,10 @@ class DashboardEditor(tk.Frame):
                 if kind in ('number','battery') and candidate['schema']==1:
                     candidate['schema']=6
                     for widget in candidate['widgets']:widget['zone']='B'
-                if candidate['schema'] in (6,12):item['zone']='B'
+                if candidate['schema'] in (6,12,13):item['zone']='B'
+                if candidate['schema']==13:
+                    from dashboard_gauges import DEFAULT_PANEL
+                    item['background']=DEFAULT_PANEL
                 candidate["widgets"].append(item)
                 try:
                     canonical = validate_editor_layout(candidate)
@@ -590,12 +641,16 @@ class DashboardEditor(tk.Frame):
     def _draw_widget(self, widget, *, invalid=False):
         left, top, right, bottom = widget_bounds(widget)
         color = ERROR if invalid else widget["color"]
-        background = self._layout["background"]
+        background = widget.get('background',self._layout["background"])
         track = track_color(color, background)
         parts = _widget_parts(widget)
-        if not self._layout.get("wallpaper"):self._rect(left + 1, top + 1, right - 1, bottom - 1, fill=background, outline="")
-        sample=75 if widget['kind']=='battery' else (-35 if widget['channel']%2 else 35)
+        if 'background' in widget or not self._layout.get("wallpaper"):
+            self._rect(left + 1, top + 1, right - 1, bottom - 1, fill=background, outline=track)
+        alarm=self.alarm_enabled.get() and widget['channel']==2
+        hidden=alarm and bool(int(time.monotonic()*1000)//125%2)
+        sample=100 if alarm else 75 if widget['kind']=='battery' else (-35 if widget['channel']%2 else 35)
         for name, text in (("title",'BAT' if widget['channel']==0 else f"CH{widget['channel']}"), ("value", f"{sample}%")):
+            if name=='value' and hidden:continue
             x, y, width, height = parts[name]
             alignment = parts["text_align"][name]
             anchor = {"left": "w", "right": "e", "center": "center"}[alignment]
@@ -603,20 +658,23 @@ class DashboardEditor(tk.Frame):
             self._text(text_x, top + y + height / 2, text, color=color, anchor=anchor, size=7)
         x, y, width, height = parts["gauge"]
         gauge_left, gauge_top = left + x, top + y
-        if widget['kind']=='battery':
+        if hidden:pass
+        elif widget['kind']=='battery':
             self._rect(gauge_left,gauge_top,gauge_left+width,gauge_top+height,fill=track,outline=color)
             self._rect(gauge_left+1,gauge_top+1,gauge_left+width*.75,gauge_top+height-1,fill=color,outline='')
         elif widget["kind"] == "bar":
             self._rect(gauge_left, gauge_top, gauge_left + width, gauge_top + height, fill=track, outline="")
             middle=gauge_left+width/2
-            end=middle+width*sample/240
+            end=middle+width*sample/(200 if 'background' in widget else 240)
             self._rect(min(middle,end),gauge_top,max(middle,end),gauge_top+height,fill=color,outline="")
         elif widget['kind']=='semicircle':
             # Keep the four-pixel stroke inside the native gauge rectangle.
-            arc = self._coords(gauge_left + 2, gauge_top + 2, gauge_left + width - 2, gauge_top + height - 2)
-            self.canvas.create_arc(*arc, start=0, extent=180, style="arc", outline=track, width=max(2, self.scale * 4))
+            stroke=parts.get('arc_width',4)
+            inset=stroke/2
+            arc = self._coords(gauge_left + inset, gauge_top + inset, gauge_left + width - inset, gauge_top + height - inset)
+            self.canvas.create_arc(*arc, start=0, extent=180, style="arc", outline=track, width=max(2, self.scale * stroke))
             # Twelve o'clock is 90 degrees in Tk; positive channel values turn clockwise.
-            self.canvas.create_arc(*arc,start=90,extent=-90*sample/120,style="arc",outline=color,width=max(2,self.scale*4))
+            self.canvas.create_arc(*arc,start=90,extent=-90*sample/(100 if 'background' in widget else 120),style="arc",outline=color,width=max(2,self.scale*stroke))
         if widget["id"] == self._selected or invalid:
             self._rect(left + 0.5, top + 0.5, right - 0.5, bottom - 0.5,
                        outline=ERROR if invalid else ACCENT, width=2, dash=(4, 3) if invalid else ())
@@ -625,7 +683,7 @@ class DashboardEditor(tk.Frame):
         if not hasattr(self, "canvas"):
             return
         self.canvas.delete("all")
-        full=self._layout['schema']==12
+        full=self._layout['schema']==12 or self._layout.get('full_background',False)
         photo=self._layout.get('wallpaper')
         self._rect(0,0,SCREEN_WIDTH,SCREEN_HEIGHT,fill=self._layout['background'] if full else '#303943',outline='#71808f')
         if photo:

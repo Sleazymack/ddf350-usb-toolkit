@@ -26,6 +26,11 @@ RAW_SIZE, SECTOR, APP = 1011712, 4096, 0x7000
 LEGACY_SIZE = 828760
 LEGACY_HASH = 'c1c913dec0e395ccfb7c4dc8e71a4b1d3d8da9242a635cdffe979fc44208b77d'
 LEGACY_TAIL = 'ae5a309a9ebb500976a7d2fe69155a308768972faf87c50d73bbc32ad1043cf7'
+# Pinned application from the manufacturer's 1.2.0 archive. It uses the same
+# maintenance mapping and bootloader generation as 2.0.5.
+OFFICIAL_120_SIZE = 457584
+OFFICIAL_120_HASH = '16e8fd4a3a22b8ed932265329d6141822561b0de6996a9dc320954348d98f31b'
+OFFICIAL_120_TAIL = '9bdf0dd5c904eadf09b73dd5b8eeb92715509173571e0a2cfc5f2b0d30bff12c'
 
 
 def require(ok, text):
@@ -90,7 +95,7 @@ def known_svi(raw):
             re.fullmatch(r'\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}', text) is not None)
 
 
-def recognize_installed(raw, original):
+def recognize_installed(raw, original, *, allow_official_upgrade=False):
     validate_geometry(raw)
     p._require_original(original)
     app = raw[APP:]
@@ -98,6 +103,12 @@ def recognize_installed(raw, original):
     if p.sha256(legacy) == LEGACY_HASH:
         return 'legacy-usb1ms'
     damaged = known_svi(raw)
+    if allow_official_upgrade:
+        stock_120=app[:OFFICIAL_120_SIZE]
+        if p.sha256(stock_120)==OFFICIAL_120_HASH:
+            return 'original-1.2.0'
+        if damaged and p.sha256(stock_120[0x3000:])==OFFICIAL_120_TAIL:
+            return 'original-1.2.0/windows-prefix'
     if damaged and p.sha256(legacy[0x3000:]) == LEGACY_TAIL:
         return 'legacy-usb1ms/windows-prefix'
     candidates = [original] + [p.build_patch(original, dashboard=d, usb_1ms=f)
@@ -155,13 +166,13 @@ def validate_new_target(target):
     if info.get('startup_animation'):
         from startup_media import validate_new_animation
         _,asset,version=startup.unpack(target,with_version=True)
-        require(version==2,'Ancien lecteur de démarrage : prépare un nouveau fichier.')
+        require(version in (2,4),'Ancien lecteur de démarrage : prépare un nouveau fichier.')
         validate_new_animation(asset)
 
 
 def plan_transfer(before, target, original):
     require(p.inspect_image(target)['recognized'], 'Fichier cible non reconnu.')
-    state = recognize_installed(before, original)
+    state = recognize_installed(before, original, allow_official_upgrade=target==original)
     after = bytearray(before)
     after[APP:APP+len(target)] = target
     require(len(after) == RAW_SIZE, 'Cible hors mémoire application.')
@@ -302,13 +313,33 @@ class WindowsVolume:
         self.k.CloseHandle(self.handle)
 
 
+TERMINAL_PHASES = ('done', 'error', 'error_unplug', 'unplug')
+
+
 def status(directory, phase, message):
+    """Progress is advisory. Never abort device I/O because the GUI is reading."""
     require(directory.resolve().is_relative_to(runs_root().resolve()),'Compte rendu hors application.')
-    tmp=directory/'status.tmp'
-    with tmp.open('x',encoding='utf-8') as f:
-        json.dump({'phase':phase,'message':message},f)
-    os.replace(tmp,directory/'status.json')
-    append_log(directory,phase,message)
+    # One worker appends; the GUI consumes complete lines. Neither needs to
+    # replace/delete a file the other process might still have open on Windows.
+    try: append_log(directory,phase,message)
+    except OSError: pass
+    if phase in TERMINAL_PHASES:
+        # Independent, write-once notification if the journal was unavailable.
+        # A reader that catches an incomplete JSON document retries next poll.
+        try:
+            with (directory/(phase+'.json')).open('x',encoding='utf-8') as f:
+                json.dump({'phase':phase,'message':message},f)
+        except OSError: pass
+
+
+def terminal_status(directory):
+    for phase in TERMINAL_PHASES:
+        try:
+            rec=json.loads((directory/(phase+'.json')).read_text(encoding='utf-8'))
+            if isinstance(rec,dict) and rec.get('phase')==phase and isinstance(rec.get('message'),str):
+                return rec
+        except (OSError,ValueError):pass
+    return None
 
 
 def append_log(directory, phase, message, *, filename='journal.jsonl'):
@@ -373,6 +404,7 @@ def run_job(directory, original=None):
             notify('error' if failure else 'done',failure or 'Transfert terminé. Rallume la radio avec Power uniquement.')
         elif device:
             device.close()
+    return failure is None
 
 
 def launch_elevated(directory):
@@ -406,12 +438,12 @@ def launch_elevated(directory):
         ole.CoUninitialize()
 
 
-def worker_active(handle):
+def worker_exit_code(handle):
     k=C.WinDLL('kernel32',use_last_error=True);code=W.DWORD()
     k.GetExitCodeProcess.argtypes=[W.HANDLE,C.POINTER(W.DWORD)]
     if not k.GetExitCodeProcess(handle,C.byref(code)):
         raise C.WinError(C.get_last_error())
-    return code.value==259
+    return None if code.value==259 else code.value
 
 
 def close_process(handle):

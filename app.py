@@ -29,6 +29,9 @@ EDITIONS = (
     ("strip_drift", "Strip Drift", "Barres segmentées · vert et cyan", (1,2,3,4)),
     ("led_segments", "LED Segments", "Deux cadrans segmentés · vert et cyan", (1,2,3,4)),
     ("purple_drift", "Purple Drift", "Deux aiguilles · violet et vert", (1,2,3,4)),
+    ("equalizer_gold_v2", "Equalizer Gold", "Barres rouge et vert · cadrans dorés", (1,2,3,4)),
+    ("classic_chrome_v2", "Classic Chrome", "Cadrans blancs · aiguilles rouges", (1,2,3,4)),
+    ("neon_hex_v2", "Neon Hex", "Blocs hexagonaux · cyan et violet", (1,2,3,4)),
 )
 BG, PANEL, INK, MUTED, ACCENT = "#101924", "#1b2939", "#eff5fc", "#a6b5c8", "#55dfd0"
 OFFICIAL_DOWNLOAD_URL = "https://www.dumborc.com/?page_id=930"
@@ -54,10 +57,11 @@ def find_official_firmware():
     return str(candidate)
 
 
-def prepare_file(source: str, destination: str, dashboard: str, usb_1ms: bool, layout=None) -> dict:
+def prepare_file(source: str, destination: str, dashboard: str, usb_1ms: bool, layout=None,blink_ch2=False) -> dict:
     """Use the same guarded, hash-pinned engine as the command-line tool."""
     original = patcher.read_regular_file(source)
     options = {"dashboard": dashboard, "usb_1ms": usb_1ms}
+    if blink_ch2:options['blink_ch2']=True
     if layout is not None:
         options["layout"] = patcher.dashboard_custom.current_layout(layout)
     result = patcher.build_patch(original, **options)
@@ -79,6 +83,7 @@ class Application:
         self.official_resource = None
         self.dashboard = tk.StringVar(value="original")
         self.fast = tk.BooleanVar(value=True)
+        self.blink_ch2=tk.BooleanVar(value=False)
         self.status = i18n.StringVar(value="Choisis une présentation, puis le firmware officiel V2.0.5.")
         self.events: queue.Queue = queue.Queue()
         self.busy = False
@@ -390,11 +395,20 @@ def self_test(destination: str):
         wizard = Wizard(wizard_root)
         try:
             wizard.confirm_version()
+            wizard.show_official_update()
+            if wizard.source.get():
+                wizard.next()
+                report['official_update_exact_firmware']=(wizard.target==patcher.read_regular_file(wizard.source.get()) and wizard.step==5)
+                if not report['official_update_exact_firmware']:
+                    raise RuntimeError('Official update did not prepare the exact stock firmware')
+            wizard.show_radio_mode()
+            wizard.confirm_version()
             import startup_media
-            report['startup_media_import_and_conversion_verified']=startup_media.self_test()
+            report['startup_media_import_verified']=startup_media.self_test()
+            report['gif_converter_available']=False
             report['startup_animation_available']=True
             report['startup_media_bundled']=False
-            report['startup_gif_limits']={'bytes_exclusive':startup_media.GIF_BYTES,'max_fps':5}
+            report['startup_gif_limits']={'bytes_exclusive':startup_media.GIF_BYTES,'max_fps':5,'max_width':128,'max_height':160,'palette_color_limit':None,'display_format':'RGB565','max_frames':20,'max_duration_ms':4000}
             report['startup_default_original']=wizard.startup_media is None
             report['distribution']='portable-only'
             from dashboard_fullscreen import THEMES,scene as theme_scene
@@ -414,7 +428,19 @@ def self_test(destination: str):
             if wizard.step != 3 or wizard.inline_editor is None:
                 raise RuntimeError("Wizard editor page unavailable")
             report['wizard_available'] = True
-            report['lower_editor_available']=wizard.inline_editor.get_layout()['schema']==6
+            report['lower_editor_available']=wizard.inline_editor.get_layout()['schema']==13
+            report['ch2_alarm_default_disabled']=not wizard.blink_ch2.get() and not wizard.inline_editor.get_layout()['blink_ch2']
+            report['gauge_panel_backgrounds_available']=all('background' in widget for widget in wizard.inline_editor.get_layout()['widgets'])
+            report['custom_semicircle_width_pixels']=8
+            if wizard.source.get():
+                wizard.inline_editor.alarm_checkbox.invoke()
+                alarm_layout=wizard.inline_editor.get_layout()
+                alarm_image=patcher.build_patch(original,dashboard='custom',layout=alarm_layout)
+                report['custom_alarm_generation_verified']=patcher.inspect_image(alarm_image)['recognized'] and patcher.revert_patch(alarm_image)==original
+                wizard.inline_editor.alarm_checkbox.invoke()
+                report['native_alarm_generation_verified']=all(
+                    patcher.inspect_image(patcher.build_patch(original,dashboard=key,blink_ch2=True))['recognized']
+                    for key in ('original','ch1234','ch123456'))
             report['two_zone_editor_available']=False
             from PIL import Image
             import io,dashboard_wallpaper
@@ -497,11 +523,13 @@ def main(argv=None):
     if args.install_job:
         from installer import run_job
         try:
-            run_job(args.install_job)
+            ok=run_job(args.install_job)
         except Exception as error:
             from installer import status
             try: status(Path(args.install_job), 'error', str(error))
             except Exception: pass
+            ok=False
+        if not ok:raise SystemExit(1)
         return
     if args.self_test:
         i18n.set_language(args.language or i18n.DEFAULT_LANGUAGE)

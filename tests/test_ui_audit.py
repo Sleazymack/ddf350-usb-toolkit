@@ -15,7 +15,7 @@ class LayoutAuditTests(unittest.TestCase):
     def test_all_pages_both_languages_and_four_text_scales(self):
         result=ui_audit.collect()
         failures=[c for c in result['cases'] if c['issues']]
-        self.assertEqual(result['cases_count'],400)
+        self.assertEqual(result['cases_count'],624)
         self.assertEqual(failures,[],str(failures)[:4000])
         self.assertEqual(result['result'],'PASS')
 

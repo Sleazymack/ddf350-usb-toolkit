@@ -17,6 +17,7 @@ from i18n import tr
 from app import Application, EDITIONS, BG, PANEL, INK, MUTED, ACCENT
 import patch_firmware as p
 import installer
+from dashboard_fullscreen import THEMES as FULLSCREEN_THEMES
 from ui_layout import ScrollArea,wrap_to_parent,wrap_in_control
 
 
@@ -39,6 +40,7 @@ class Wizard(Application):
         self.game_values=None
         self.game_enabled=auto_reader
         self.pc_mode=False
+        self.official_update=False
         self.pc_panels=[]
         self.tray=None
         self.tray_events=queue.Queue()
@@ -161,22 +163,36 @@ class Wizard(Application):
         if self.pc_mode:
             self.render_pc_mode()
             return
-        self.step_label.configure(text=tr(f'ÉTAPE {self.step} / 7'))
+        steps=(1,5,6,7) if self.official_update else tuple(range(1,8))
+        self.step_label.configure(text=tr(f'ÉTAPE {steps.index(self.step)+1} / {len(steps)}'))
         titles=['Personnaliser la télécommande','Choisir le dashboard','Personnaliser','Écran de démarrage','Brancher la radio','Installer sur la radio','Redémarrer et essayer']
         self.title_label.configure(text=tr(titles[self.step-1]))
+        if self.official_update:
+            self.title_label.configure(text=tr('Mise à jour officielle 2.0.5'))
         if compact_startup:self.step_label.configure(text=tr('ÉTAPE 4 / 7')+'   ·   '+tr(titles[3]))
         self.back.configure(state='disabled' if self.step in (1,7) or self.busy else 'normal')
         self.forward.configure(text=tr('Installer sur la radio' if self.step==6 else 'Réduire pour jouer' if self.step==7 else 'Continuer'),
                                state='disabled' if self.busy else 'normal')
+        if self.official_update:
+            self.back.configure(state='disabled' if self.step==7 or self.busy else 'normal')
+            self.forward.configure(text=tr('Terminer' if self.step==7 else 'Installer la version officielle' if self.step==6 else 'Continuer'))
         self.status.set('')
         if self.step==1:
             if self.version_confirmed and not self.source.get():
                 self.render_firmware_source()
                 return
-            self.text('Crée ton dashboard, puis installe-le sur la radio depuis cette application.\nPour commencer, vérifie la version dans les informations de la radio : HW 1.0 / logiciel 2.0.5.')
-            self.action(self.body,'1 · Modifier le dashboard · ma radio est en 2.0.5 / HW 1.0',self.confirm_version).pack(fill='x',anchor='w',ipady=12,pady=10)
+            if self.official_update:
+                self.text('Installe le firmware constructeur 2.0.5 exact, avec le dashboard et le démarrage d’origine. Cette option remplace aussi un firmware personnalisé et retire le correctif USB pour le jeu PC.')
+                self.text('DDF-350 HW 1.0 : mise à jour depuis la version officielle 1.2.0, ou réinstallation depuis 2.0.5 et ses variantes reconnues. Vérifie ta version dans les informations de la radio.')
+                self.text('Pour une autre version, utilise la procédure du fabricant. Les versions antérieures à 1.1.5 nécessitent aussi une migration du programme de démarrage.')
+                self.action(self.body,'Procédure officielle DumboRC',self.open_official_download).pack(fill='x',pady=(0,8))
+                return
+            self.text('Choisis une action. Vérifie HW 1.0 et la version du logiciel dans les informations de la radio.')
+            self.action(self.body,'1 · Modifier le dashboard · ma radio est en 2.0.5 / HW 1.0',self.confirm_version).pack(fill='x',anchor='w',ipady=6,pady=(0,8))
             self.pc_button=self.action(self.body,'2 · Activer la télécommande sur PC · CH1 / CH2',self.show_pc_mode)
-            self.pc_button.pack(fill='x',anchor='w',ipady=10,pady=(10,0))
+            self.pc_button.pack(fill='x',anchor='w',ipady=6,pady=(0,8))
+            self.update_button=self.action(self.body,'3 · Mettre à jour la radio · firmware officiel 2.0.5',self.show_official_update)
+            self.update_button.pack(fill='x',anchor='w',ipady=6)
             self.forward.configure(state='normal' if self.version_confirmed else 'disabled')
         elif self.step==2:
             self.build_gallery()
@@ -188,7 +204,7 @@ class Wizard(Application):
                 if self.custom_layout:self.inline_editor.set_layout(self.custom_layout)
             else:
                 self.text('Présentation sélectionnée : '+next(e[1] for e in EDITIONS if e[0]==self.dashboard.get()))
-                if self.dashboard.get() in ('strip_drift','led_segments','purple_drift'):
+                if self.dashboard.get() in FULLSCREEN_THEMES:
                     canvas=tk.Canvas(self.body,width=204,height=272,bg='#030609',highlightthickness=0)
                     canvas.pack(anchor='center',pady=8)
                     canvas.bind('<Configure>',lambda e,c=canvas,k=self.dashboard.get():self.paint_theme(c,k))
@@ -197,6 +213,10 @@ class Wizard(Application):
                 option=tk.Checkbutton(self.body,text=tr('USB rapide · 1 ms'),variable=self.fast,bg=BG,fg=INK,
                     selectcolor=PANEL,font=('Segoe UI',11))
                 option.pack(anchor='w',pady=12);wrap_to_parent(option,self.body,20)
+                self.alarm_checkbox=tk.Checkbutton(self.body,text=tr('Faire clignoter CH2 au-dessus de +90'),
+                    variable=self.blink_ch2,bg=BG,fg=INK,selectcolor=PANEL,activebackground=BG,
+                    activeforeground=INK,font=('Segoe UI',10),anchor='w',justify='left')
+                self.alarm_checkbox.pack(fill='x',pady=(0,8));wrap_in_control(self.alarm_checkbox)
                 self.text('Les menus de la radio sont conservés. Les nouvelles présentations sont expérimentales.')
         elif self.step==4:
             self.render_startup_media()
@@ -216,7 +236,10 @@ class Wizard(Application):
             for line,error in self.log_lines:self.display_log(line,error)
             self.label(self.body,'Un firmware ou un matériel inconnu est refusé.',size=9,color=MUTED,wraplength=700,justify='left').pack(anchor='w')
         else:
-            self.text('Le transfert et sa relecture ont réussi.\n1. Laisse l’USB débranché et remets la batterie.\n2. Allume avec Power uniquement.\n3. Vérifie ton dashboard et les commandes.\nPour jouer sur PC, rebranche ensuite l’USB en mode normal.\nLa lecture CH1/CH2 reprend automatiquement dans cette application.')
+            if self.official_update:
+                self.text('Le firmware officiel 2.0.5 a été installé et vérifié.\n1. Laisse l’USB débranché et remets la batterie.\n2. Allume avec Power uniquement.\n3. Vérifie la version 2.0.5, l’écran d’origine et les commandes.')
+            else:
+                self.text('Le transfert et sa relecture ont réussi.\n1. Laisse l’USB débranché et remets la batterie.\n2. Allume avec Power uniquement.\n3. Vérifie ton dashboard et les commandes.\nPour jouer sur PC, rebranche ensuite l’USB en mode normal.\nLa lecture CH1/CH2 reprend automatiquement dans cette application.')
             self.action(self.body,'Voir la sauvegarde et le compte rendu',lambda:os.startfile(self.job_directory)).pack(fill='x',anchor='w',ipady=10,pady=12)
 
     def build_gallery(self):
@@ -290,7 +313,7 @@ class Wizard(Application):
     def paint_gallery(self):
         c=self.gallery_canvas
         key=self.dashboard.get()
-        if key in ('strip_drift','led_segments','purple_drift'):
+        if key in FULLSCREEN_THEMES:
             self.paint_theme(c,key);return
         c.delete('all')
         if key!='custom':
@@ -366,9 +389,9 @@ class Wizard(Application):
         path=filedialog.askopenfilename(parent=self.root,title=tr('Choisir une photo ou un GIF…'),
             filetypes=[(tr('Photo / GIF'),'*.png *.jpg *.jpeg *.bmp *.gif'),('PNG / JPEG / BMP','*.png *.jpg *.jpeg *.bmp'),('GIF','*.gif')])
         if not path:return
-        self.launch_media_conversion(path=path)
+        self.launch_media_import(path=path)
 
-    def launch_media_conversion(self,*,path):
+    def launch_media_import(self,*,path):
         self.media_loading=True;self.render()
         def work():
             try:
@@ -427,8 +450,22 @@ class Wizard(Application):
         show(0)
 
     def confirm_version(self):
+        self.official_update=False
         self.version_confirmed=True
         if self.source.get():self.step=2
+        self.render()
+
+    def show_official_update(self):
+        if self.busy or self.media_loading:return
+        self.stop_game_reader()
+        self.game_enabled=False
+        self.game_status.set('Firmware constructeur · mise à jour officielle')
+        self.official_update=True
+        self.pc_mode=False
+        self.step=1
+        self.version_confirmed=True
+        self.identity=None
+        self.target=None
         self.render()
 
     def select_language(self,value):
@@ -489,11 +526,15 @@ class Wizard(Application):
             self.render()
             return
         if self.step==1:
+            self.official_update=False
             self.version_confirmed=False;self.render();return
         if self.inline_editor:
             try:self.custom_layout=self.inline_editor.get_layout()
             except ValueError:pass
-        self.step=max(1,self.step-1);self.render()
+        if self.official_update and self.step==5:
+            self.step=1;self.identity=None;self.target=None
+        else:self.step=max(1,self.step-1)
+        self.render()
 
     def next(self):
         if self.busy or self.media_loading:return
@@ -501,6 +542,14 @@ class Wizard(Application):
             self.hide_to_tray()
             return
         if self.step==1 and (not self.version_confirmed or not self.source.get()):return
+        if self.official_update and self.step==1:
+            try:
+                original=p.read_regular_file(self.source.get())
+                p._require_original(original)
+                self.target=original
+            except (OSError,ValueError) as error:
+                messagebox.showerror(tr('Préparation impossible'),tr(str(error)),parent=self.root);return
+            self.step=5;self.render();return
         if self.step==2 and self.dashboard.get()=='custom':
             self.choose_custom();return
         if self.step==3:
@@ -517,6 +566,7 @@ class Wizard(Application):
                 original=p.read_regular_file(self.source.get())
                 options={'dashboard':self.dashboard.get(),'usb_1ms':self.fast.get()}
                 if self.dashboard.get()=='custom':options['layout']=p.dashboard_custom.current_layout(self.custom_layout)
+                else:options['blink_ch2']=self.blink_ch2.get()
                 if self.startup_media:
                     options['startup_photo' if self.startup_media.kind=='photo' else 'startup_animation']=self.startup_media.asset
                 self.target=p.build_patch(original,**options)
@@ -526,6 +576,8 @@ class Wizard(Application):
         if self.step==6:
             self.install();return
         if self.step==7:
+            if self.official_update:
+                self.show_radio_mode();return
             self.game_enabled=True
             self.start_game_reader()
             self.hide_to_tray();return
@@ -557,6 +609,7 @@ class Wizard(Application):
             self.job_directory.mkdir(parents=True,exist_ok=False)
             original=p.read_regular_file(self.source.get())
             p._require_original(original)
+            if self.official_update:p._require_original(self.target)
             # Give the elevated worker an exact local snapshot, independent of
             # the original download path or the developer's environment.
             p.write_new_output(self.job_directory/'original.bin',original,source=self.source.get())
@@ -565,7 +618,7 @@ class Wizard(Application):
                 json.dump({'identity':self.identity,'target_sha256':p.sha256(self.target)},f)
         except Exception as error:
             self.finish_error(str(error));return
-        self.log('Fichier du dashboard préparé et vérifié.')
+        self.log('Firmware officiel 2.0.5 vérifié · fichier constructeur exact.' if self.official_update else 'Fichier du dashboard préparé et vérifié.')
         self.log('Lancement du processus administrateur. Windows peut demander confirmation ; si l’application est déjà administrateur, aucune nouvelle fenêtre n’est nécessaire.')
         def work():
             try:self.events.put(('launched',installer.launch_elevated(self.job_directory),None))
@@ -608,19 +661,22 @@ class Wizard(Application):
                 self.render()
                 if kind=='media_error':self.status.set(value)
         if self.worker_handle:
+            exit_code=installer.worker_exit_code(self.worker_handle)
+            # Check liveness first: after exit, this final read includes even
+            # the last record written just before the worker returned.
             self.read_worker_log()
-            try:
-                report=json.loads((self.job_directory/'status.json').read_text(encoding='utf-8'))
-                self.last_phase=report['phase'];self.status.set(report['message'])
-            except (OSError,ValueError):pass
-            active=installer.worker_active(self.worker_handle)
-            if not active:
+            if self.last_phase not in installer.TERMINAL_PHASES or exit_code is not None:
+                report=installer.terminal_status(self.job_directory)
+                if report and (self.last_phase not in installer.TERMINAL_PHASES or
+                        installer.TERMINAL_PHASES.index(report['phase']) < installer.TERMINAL_PHASES.index(self.last_phase)):
+                    self.last_phase=report['phase'];self.status.set(report['message'])
+            if exit_code is not None:
                 installer.close_process(self.worker_handle);self.worker_handle=None
-                if self.last_phase=='done':
+                if exit_code==0 and self.last_phase in ('done','unplug'):
                     self.busy=False;self.progress.stop();self.step=7;self.render()
-                    if self.game_enabled:self.start_game_reader()
+                    if self.game_enabled and not self.official_update:self.start_game_reader()
                 else:
-                    self.finish_error(self.status.get() if self.last_phase=='error' else
+                    self.finish_error(self.status.get() if self.last_phase in ('error','error_unplug') else
                         'Le transfert a été interrompu. Débranche l’USB et garde la radio éteinte. Consulte le dossier de sauvegarde avant de réessayer.')
         self.poll_game_reader()
         self.poll_tray()
@@ -669,8 +725,10 @@ class Wizard(Application):
     def show_radio_mode(self):
         if self.busy or self.media_loading:return
         self.pc_mode=False
-        if self.step==7:
+        if self.step==7 or self.official_update:
             self.step=1;self.version_confirmed=False;self.identity=None;self.target=None
+            self.official_update=False
+            self.game_status.set('Lecture CH1/CH2 · disponible après branchement USB normal')
         # Keep an in-progress editor intact when already on the radio page.
         if self.inline_editor:return
         self.render()
@@ -789,6 +847,8 @@ class Wizard(Application):
             try:
                 entry=json.loads(record.decode('utf-8'))
                 line=entry['time'][11:19]+'  '+entry['message']
+                if entry['phase'] in ('checking','writing',*installer.TERMINAL_PHASES):
+                    self.last_phase=entry['phase'];self.status.set(entry['message'])
                 error=entry['phase'] in ('error','error_unplug','diagnostic')
                 self.log_lines.append((line,error));self.display_log(line,error)
             except (ValueError,KeyError,TypeError):

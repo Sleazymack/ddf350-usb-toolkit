@@ -42,7 +42,7 @@ class LayoutTests(unittest.TestCase):
     def test_legacy_import_keeps_only_lower_grid_and_rejects_drag_into_stock_top(self):
         root=tk.Tk();root.withdraw();ui=editor.DashboardEditor(root,layout=z.DEFAULT,compact=True)
         try:
-            self.assertEqual(ui.get_layout()['schema'],6)
+            self.assertEqual(ui.get_layout()['schema'],13)
             self.assertEqual({w['channel'] for w in ui.get_layout()['widgets']},{3,4})
             self.assertFalse(hasattr(ui,'zone_combo'))
             ui._selected='g3';ui._sync_controls()

@@ -117,9 +117,12 @@ def collect(widths=(640,800),scales=(4/3,5/3,2,8/3)):
                 try:
                     for step in range(1,8):
                         ui.step=step;ui.render();record(f'radio-{step}')
-                    from dashboard_themes import THEMES
-                    for key in THEMES:
+                    from dashboard_fullscreen import THEMES
+                    from app import EDITIONS
+                    for key in (entry[0] for entry in EDITIONS if entry[0] in THEMES):
                         ui.dashboard.set(key);ui.step=3;ui.render();record('theme-'+key)
+                        ui.alarm_checkbox.invoke();record('theme-'+key+'-alarm')
+                        ui.alarm_checkbox.invoke()
                     ui.dashboard.set('original')
                     import startup_media
                     import io
@@ -133,6 +136,8 @@ def collect(widths=(640,800),scales=(4/3,5/3,2,8/3)):
                     ui.media_loading=True;ui.render();record('startup-media-converting');ui.media_loading=False
                     ui.clear_startup_media()
                     ui.choose_custom();record('editor-gauge')
+                    ui.inline_editor.alarm_checkbox.invoke();record('editor-ch2-alarm')
+                    ui.inline_editor.alarm_checkbox.invoke()
                     if hasattr(ui.inline_editor,'notebook'):
                         for n,tab in enumerate(ui.inline_editor.notebook.tabs()):
                             ui.inline_editor.notebook.select(tab);record(f'editor-tab-{n}')
@@ -147,6 +152,10 @@ def collect(widths=(640,800),scales=(4/3,5/3,2,8/3)):
                         ui.select_language('en' if language=='fr' else 'fr');record('language-dropdown')
                         ui.select_language(language)
                     ui.select_dashboard('custom');record('gallery-custom')
+                    ui.show_official_update()
+                    for step in (1,5,6,7):
+                        ui.step=step;ui.render();record(f'official-update-{step}')
+                    ui.show_radio_mode()
                     ui.step=1
                     ui.source.set('');ui.version_confirmed=True;ui.render();record('firmware-source')
                 finally:ui.busy=False;ui.close()

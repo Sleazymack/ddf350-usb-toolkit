@@ -11,7 +11,7 @@ import sys
 
 
 def export(elf_path, binary_path, output_path, variant='standard'):
-    if variant not in ('standard','simple-loop'):raise ValueError('Unknown player variant')
+    if variant not in ('standard','simple-loop','rgb565'):raise ValueError('Unknown player variant')
     elf=Path(elf_path).read_bytes();code=Path(binary_path).read_bytes()
     if elf[:7]!=b'\x7fELF\x01\x01\x01':raise ValueError('Expected little-endian ELF32')
     shoff=struct.unpack_from('<I',elf,32)[0]
@@ -34,7 +34,7 @@ def export(elf_path, binary_path, output_path, variant='standard'):
     data={'base':base,'sha256':hashlib.sha256(code).hexdigest(),'code_hex':code.hex(),
           'symbols':symbols,'context_size':words('boot_context_size')[0],
           'context_offsets':dict(zip(('active','dead','root','image','timer','decoder','pixels','frame','next','descriptor','sw','sh'),words('boot_context_offsets'))),
-          'c_sha256':hashlib.sha256((root/'player.c').read_bytes()).hexdigest(),
+          'c_sha256':hashlib.sha256((root/('player-rgb.c' if variant=='rgb565' else 'player.c')).read_bytes()).hexdigest(),
           'linker_sha256':hashlib.sha256((root/'player.ld').read_bytes()).hexdigest(),
           'compiler':'Zig 0.13.0 cc thumb-freestanding-eabi cortex_m3 -Oz'}
     if variant=='simple-loop':data['compiler']+=' -DDDF_SIMPLE_LOOP'

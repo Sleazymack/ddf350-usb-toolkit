@@ -19,7 +19,7 @@ CLASS={'obj':six.BASE+0x96558,'bar':six.BASE+0x96d68,'arc':six.BASE+0x96d4c,
        'label':six.BASE+0x96e48,'line':six.BASE+0x96e64}
 LINE_CREATE=six.BASE+0x4a778
 LINE_POINTS=six.BASE+0x4a96c
-MAX_LEAVES=80
+MAX_LEAVES=112
 IMG_CREATE=six.BASE+0x47900
 IMG_SRC=six.BASE+0x4881c
 CLASS['img']=six.BASE+0x96e2c

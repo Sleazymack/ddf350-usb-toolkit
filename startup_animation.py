@@ -8,6 +8,7 @@ import stat
 import startup_player_blob as player
 import startup_player_v1 as player_v1
 import startup_player_loop as player_loop
+import startup_player_rgb as player_rgb
 
 BASE=0x08005000
 PLAYER_BASE=0x080a8000
@@ -15,7 +16,8 @@ PLAYER_OFFSET=PLAYER_BASE-BASE
 MAX_IMAGE_SIZE=0x080f5000-BASE
 MAX_ASSET_SIZE=310000
 TRAILER_MAGIC=b'DDF350-STARTUP-ANIMATION-v1!'
-PLAYERS={1:player_v1,2:player,3:player_loop}
+PLAYERS={1:player_v1,2:player,3:player_loop,4:player_rgb}
+RGB_MAGIC=b'DDFRGB1\0'
 LOOP_MAGIC=b'DDFLOOP1'
 # This format stores one 500-ms cycle of ten frames.
 LOOP_FRAMES,LOOP_PERIOD_MS,LOOP_PLAYS=10,50,8
@@ -30,7 +32,11 @@ def require(ok,message):
 def decode_asset(blob):
     require(isinstance(blob,bytes) and 52<=len(blob)<=MAX_ASSET_SIZE,'Unsupported startup animation size.')
     magic,w,h,count,colors,size=HEADER.unpack_from(blob)
-    require(magic in (b'DDFANM1\0',LOOP_MAGIC) and 16<=w<=128 and w%2==0 and 16<=h<=160 and 1<=count<=40 and colors==16 and size==w*h//2 and size<=10240,'Unsupported startup animation header.')
+    direct=magic==RGB_MAGIC
+    require(magic in (b'DDFANM1\0',LOOP_MAGIC,RGB_MAGIC) and 16<=w<=128 and w%2==0 and 16<=h<=160 and 1<=count<=40 and
+            ((colors==0 and size==w*h*2 and size<=40960) if direct else
+             (colors==16 and size==w*h//2 and size<=10240)),'Unsupported startup animation header.')
+    if direct:require(blob[20:52]==bytes(32),'Invalid RGB565 startup reserved bytes.')
     is_loop=magic==LOOP_MAGIC
     if is_loop:require(count==LOOP_FRAMES,'A simple loop requires ten frames.')
     cursor=52;current=bytearray(size);frames=[];durations=[]
@@ -50,7 +56,8 @@ def decode_asset(blob):
             current[position:position+n]=blob[cursor:cursor+n];position+=n;cursor+=n
         frames.append(bytes(current));durations.append(duration)
     require(cursor==len(blob) and sum(durations)<=4000,'Unsupported startup animation duration or trailing data.')
-    return {'width':w,'height':h,'frames':frames,'durations':durations,'palette':blob[20:52],'repeat_count':LOOP_PLAYS if is_loop else 1}
+    return {'width':w,'height':h,'frames':frames,'durations':durations,'palette':b'' if direct else blob[20:52],
+            'repeat_count':LOOP_PLAYS if is_loop else 1}
 
 def description(blob):
     data=decode_asset(blob)
@@ -81,19 +88,24 @@ def _branch(address,target):
     return struct.pack('<HH',0xf000|(sign<<10)|((delta>>12)&1023),0xd000|(j1<<13)|(j2<<11)|((delta>>1)&2047))
 
 def version_for(asset):
-    return 3 if asset[:8]==LOOP_MAGIC else CURRENT_PLAYER
+    return 4 if asset[:8]==RGB_MAGIC else 3 if asset[:8]==LOOP_MAGIC else CURRENT_PLAYER
+
+
+def _matching_format(asset,version):
+    return ((version==3)==(asset[:8]==LOOP_MAGIC) and
+            (version==4)==(asset[:8]==RGB_MAGIC))
 
 def attach(base_image,asset,*,player_version=None):
     decode_asset(asset)
     if player_version is None:player_version=version_for(asset)
-    require((player_version==3)==(asset[:8]==LOOP_MAGIC),'Startup format and player differ.')
+    require(_matching_format(asset,player_version),'Startup format and player differ.')
     require(type(player_version) is int and player_version in PLAYERS,'Unknown startup player version.')
     selected=PLAYERS[player_version]
     extended=len(base_image)>=PLAYER_OFFSET
     if extended:
         import dashboard_custom as custom
         layout,_=custom.read_trailer(base_image)
-        require(layout['schema']==12 and layout['wallpaper'] is not None and
+        require(layout['schema'] in (12,13) and layout['wallpaper'] is not None and
                 len(selected.CODE)<=custom.wallpaper.DATA_OFFSET-PLAYER_OFFSET and
                 base_image[PLAYER_OFFSET:custom.wallpaper.DATA_OFFSET]==b'\xff'*(custom.wallpaper.DATA_OFFSET-PLAYER_OFFSET),
                 'Dashboard overlaps the startup player area.')
@@ -113,7 +125,7 @@ def attach(base_image,asset,*,player_version=None):
         result+=asset
     else:result+=b'\xff'*(PLAYER_OFFSET-len(result))+code+asset
     metadata={'schema':1,'base_size':len(base_image),'asset_size':len(asset),'asset_sha256':hashlib.sha256(asset).hexdigest()}
-    if player_version>=2:metadata.update(schema=4 if player_version==3 else 2,player=player_version)
+    if player_version>=2:metadata.update(schema={2:2,3:4,4:5}[player_version],player=player_version)
     if extended:metadata.update(schema=3,player=player_version)
     encoded=json.dumps(metadata,sort_keys=True,separators=(',',':')).encode('ascii')
     encoded+=b' '*(-(len(result)+len(encoded)+4+len(TRAILER_MAGIC))%4)
@@ -131,7 +143,7 @@ def unpack(image,*,with_version=False):
     require(type(version) is int and version in PLAYERS,'Invalid startup player version.')
     extended=meta.get('schema')==3
     keys={'schema','base_size','asset_size','asset_sha256'} | ({'player'} if extended or version>=2 else set())
-    require(set(meta)==keys and type(meta['schema']) is int and (extended or meta['schema']=={1:1,2:2,3:4}[version]),'Invalid startup trailer.')
+    require(set(meta)==keys and type(meta['schema']) is int and (extended or meta['schema']=={1:1,2:2,3:4,4:5}[version]),'Invalid startup trailer.')
     size=meta['base_size']
     from dashboard_wallpaper import END
     require(type(size) is int and ((END<size<=END+4120) if extended else (626956<=size<PLAYER_OFFSET)) and
@@ -141,7 +153,7 @@ def unpack(image,*,with_version=False):
     asset=image[start:start+meta['asset_size']]
     require(hashlib.sha256(asset).hexdigest()==meta['asset_sha256'],'Startup asset hash differs.')
     decode_asset(asset)
-    require((version==3)==(asset[:8]==LOOP_MAGIC),'Startup format and player differ.')
+    require(_matching_format(asset,version),'Startup format and player differ.')
     base=bytearray(image[:meta['base_size']])
     if extended:base[PLAYER_OFFSET:PLAYER_OFFSET+len(PLAYERS[version].CODE)]=b'\xff'*len(PLAYERS[version].CODE)
     for site,signature in ORIGINAL_SITES.items():base[site:site+4]=signature

@@ -22,12 +22,56 @@ def image_bytes(format='PNG',color='red',size=(64,96),**kwargs):
 
 
 def gif_bytes(count=4,duration=100):
-    frames=[Image.new('RGB',(32,48),(n*5%256,n*17%256,n*31%256)) for n in range(count)]
+    frames=[Image.new('RGB',(32,48),((n%16)*5,(n%16)*17%256,(n%16)*31%256)) for n in range(count)]
     stream=io.BytesIO();frames[0].save(stream,format='GIF',save_all=True,append_images=frames[1:],duration=duration,loop=0)
     return stream.getvalue()
 
 
 class MediaTests(unittest.TestCase):
+    def test_prepared_gif_preserves_pixels_size_frame_order_and_timing(self):
+        pictures=[]
+        for color in ('red','blue'):
+            image=Image.new('RGB',(128,160),color)
+            image.putpixel((0,0),(0,255,0))
+            pictures.append(image)
+        stream=io.BytesIO()
+        pictures[0].save(stream,format='GIF',save_all=True,append_images=pictures[1:],duration=[200,400],loop=0)
+        with mock.patch.object(Image.Image,'resize',side_effect=AssertionError('No GIF resizing')),\
+             mock.patch.object(Image.Image,'quantize',side_effect=AssertionError('No GIF quantization')):
+            media=m.from_bytes(stream.getvalue())
+        data=a.decode_asset(media.asset)
+        self.assertEqual((data['width'],data['height']),(128,160))
+        self.assertEqual(data['durations'],[200,400])
+        self.assertEqual(data['repeat_count'],1)
+        for packed,expected in zip(data['frames'],pictures):
+            values=[struct.unpack_from('<H',data['palette'],2*index)[0] for byte in packed for index in (byte>>4,byte&15)]
+            rgb=list(zip(expected.tobytes()[::3],expected.tobytes()[1::3],expected.tobytes()[2::3]))
+            self.assertEqual(values,[(r>>3)<<11|(g>>2)<<5|b>>3 for r,g,b in rgb])
+
+    def test_unprepared_gif_dimensions_are_refused_and_extra_colors_are_preserved(self):
+        for size in ((129,110),(128,161),(95,110),(14,16)):
+            stream=io.BytesIO()
+            Image.new('RGB',size,'red').save(stream,format='GIF',save_all=True,
+                append_images=[Image.new('RGB',size,'blue')],duration=200)
+            with self.assertRaisesRegex(ValueError,'largeur paire'):
+                m.from_bytes(stream.getvalue())
+        pictures=[]
+        for start in (0,16):
+            image=Image.new('RGB',(32,48))
+            for x in range(16):image.paste(((start+x)*8,0,0),(x*2,0,x*2+2,48))
+            pictures.append(image)
+        stream=io.BytesIO()
+        pictures[0].save(stream,format='GIF',save_all=True,append_images=pictures[1:],duration=200)
+        media=m.from_bytes(stream.getvalue())
+        decoded=a.decode_asset(media.asset)
+        self.assertEqual(a.version_for(media.asset),4)
+        self.assertEqual(decoded['palette'],b'')
+        for packed,expected in zip(decoded['frames'],pictures):
+            rgb=expected.tobytes()
+            expected565=b''.join(struct.pack('<H',(r>>3)<<11|(g>>2)<<5|b>>3) for r,g,b in zip(rgb[::3],rgb[1::3],rgb[2::3]))
+            self.assertEqual(packed,expected565)
+        preview,_=m.preview_media(media)
+        self.assertEqual(len(preview),2)
     def test_photo_has_exact_native_bytes_aspect_and_margins(self):
         for fmt in ('PNG','JPEG','BMP'):
             for size,bounds in (((60,80),(24,32,216,288)),((80,40),(24,112,216,208)),((40,80),(56,32,184,288))):
@@ -111,6 +155,22 @@ class MediaWizardTests(unittest.TestCase):
         self.ui.step=4;self.ui.startup_media=m.from_bytes(image_bytes());self.ui.render()
         self.ui.events.put(('media_error',m.GIF_TIMING,None));self.ui.poll()
         self.assertEqual(self.ui.startup_media.kind,'photo');self.assertTrue(self.ui.status.get())
+
+    def test_warning_is_visible_before_selection_and_after_import_in_both_languages(self):
+        for language in ('fr','en'):
+            i18n.set_language(language)
+            self.root.minsize(640,480);self.root.maxsize(640,480);self.root.geometry('640x480')
+            self.root.update()
+            self.ui.step=4;self.ui.render();self.root.update()
+            warning=self.ui.media_panel.gif_warning
+            self.assertTrue(warning.winfo_ismapped())
+            self.assertEqual(warning.cget('text'),i18n.tr(m.GIF_WARNING))
+            self.ui.media_candidate=m.from_bytes(gif_bytes(2,200))
+            self.ui.media_candidate_valid=True;self.ui.media_pending=True
+            self.ui.render();self.root.update()
+            self.assertTrue(self.ui.media_panel.gif_warning.winfo_ismapped())
+            self.assertEqual(self.ui.media_panel.apply.cget('text'),i18n.tr('Intégrer ce GIF'))
+            self.ui.clear_startup_media()
 
 
 @unittest.skipUnless(os.environ.get('DDF350_OFFICIAL_FIRMWARE'),'official input not supplied')

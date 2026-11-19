@@ -34,7 +34,7 @@ class BundledWorkflowTests(unittest.TestCase):
                         import startup_animation
                         for site,signature in startup_animation.ORIGINAL_SITES.items():
                             self.assertEqual(ui.target[site:site+len(signature)],signature)
-                        self.assertEqual(info['layout']['schema'],10)
+                        self.assertEqual(info['layout']['schema'],13)
                         self.assertEqual(p.revert_patch(ui.target),original)
                         from test_installer import raw_fixture
                         from test_installer_switching import windows_prefix

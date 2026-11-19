@@ -1,7 +1,7 @@
 EXPERIMENTAL BETA — USE AT YOUR OWN RISK
 
 This is an unofficial community project, independent of DumboRC.
-Version 0.7.1 is test software and may contain bugs. It can crash, change settings,
+Version 0.7.7 is test software and may contain bugs. It can crash, change settings,
 interrupt USB operation, or render your transmitter unusable, including bricking.
 You use the application and flash firmware entirely at your own risk.
 The software is provided AS IS, without warranties of functionality,

@@ -7,6 +7,7 @@ from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import app,dashboard_custom as c,dashboard_wallpaper as wp,dashboard_zones as z,editor,installer
 import patch_firmware as p
+import dashboard_gauges
 import test_dashboard_custom as probes
 from test_dashboard_custom import HAVE_ARM,BASE,ROOT,PANEL
 from test_installer import raw_fixture
@@ -32,10 +33,10 @@ class Contract(unittest.TestCase):
         try:
             with mock.patch.object(editor.filedialog,'askopenfilename',return_value='test.png'),mock.patch('startup_media.read_source',return_value=('test.png',source())):
                 ui.choose_wallpaper()
-            spec=ui.get_layout();self.assertEqual(spec,design());self.assertTrue(ui.canvas.find_withtag('wallpaper'))
+            spec=ui.get_layout();self.assertEqual(spec,dashboard_gauges.upgrade(design()));self.assertTrue(ui.canvas.find_withtag('wallpaper'))
             ui.apply_theme('Menthe');self.assertEqual(ui.get_layout()['background'],'#132b29')
             self.assertIsNone(ui.get_layout()['wallpaper']);self.assertFalse(ui.canvas.find_withtag('wallpaper'))
-            ui.stock_background();self.assertEqual(ui.get_layout()['schema'],6);self.assertNotIn('wallpaper',ui.get_layout())
+            ui.stock_background();self.assertEqual(ui.get_layout()['schema'],13);self.assertFalse(ui.get_layout()['full_background']);self.assertIsNone(ui.get_layout()['wallpaper'])
         finally:ui.destroy();root.destroy()
 
 @unittest.skipUnless(HAVE_ARM and os.environ.get('DDF350_OFFICIAL_FIRMWARE'),'local official firmware and emulator required')

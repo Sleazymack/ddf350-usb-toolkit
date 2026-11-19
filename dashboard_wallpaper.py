@@ -51,11 +51,11 @@ def descriptor(height=HEIGHT):
 
 def stored(spec):
     text=spec.get('wallpaper')
-    if spec['schema']==12 and text is not None:return {**spec,'wallpaper':hashlib.sha256(raw(text)).hexdigest()}
+    if spec['schema'] in (12,13) and text is not None:return {**spec,'wallpaper':hashlib.sha256(raw(text)).hexdigest()}
     return spec
 
 def restore(spec,image,metadata_offset):
-    if isinstance(spec,dict) and spec.get('schema')==12 and spec.get('wallpaper') is not None:
+    if isinstance(spec,dict) and spec.get('schema') in (12,13) and spec.get('wallpaper') is not None:
         if not END<=metadata_offset<=END+3:raise ValueError('Invalid embedded wallpaper boundary.')
         blob=image[DATA_OFFSET:END]
         if hashlib.sha256(blob).hexdigest()!=spec['wallpaper']:raise ValueError('Wallpaper verification failed.')

@@ -23,7 +23,7 @@ import dashboard_custom
 import startup_animation as startup
 import startup_photo as photo
 
-VERSION = "0.7.1-experimental"
+VERSION = "0.7.7-experimental"
 IS_WINDOWS = sys.platform == "win32"
 FLASH_BASE = 0x08005000
 ORIGINAL_SIZE = 626956
@@ -218,12 +218,18 @@ def _fast_helper(original: bytes) -> bytes:
 
 
 def build_patch(original: bytes, *, usb_1ms: bool = False, dashboard: str = "original", layout: dict | None = None,
-                startup_photo: bytes | None = None,startup_animation: bytes | None = None,startup_player_version: int | None = None) -> bytes:
+                startup_photo: bytes | None = None,startup_animation: bytes | None = None,startup_player_version: int | None = None,
+                blink_ch2: bool = False) -> bytes:
     """Return a pinned preset or deterministic custom layout from exact stock."""
     from dashboard_fullscreen import THEMES,layout as theme_layout
+    _require(type(blink_ch2) is bool,'CH2 alarm must be a boolean.')
+    if blink_ch2 and dashboard in ('original','ch1234','ch123456'):
+        _require(layout is None,'A native preset has its own fixed layout.')
+        return build_patch(original,usb_1ms=usb_1ms,dashboard='custom',layout={'schema':15,'native_dashboard':dashboard},
+                           startup_photo=startup_photo,startup_animation=startup_animation,startup_player_version=startup_player_version)
     if dashboard in THEMES:
         _require(layout is None,'A drift preset has its own fixed layout.')
-        return build_patch(original,usb_1ms=usb_1ms,dashboard='custom',layout=theme_layout(dashboard),
+        return build_patch(original,usb_1ms=usb_1ms,dashboard='custom',layout=theme_layout(dashboard,blink_ch2=blink_ch2),
                            startup_photo=startup_photo,startup_animation=startup_animation,startup_player_version=startup_player_version)
     _require(dashboard in ("original", "ch1234", "ch123456", "custom"),
              "Dashboard must be 'original', 'ch1234', 'ch123456' or 'custom'.")
@@ -231,16 +237,19 @@ def build_patch(original: bytes, *, usb_1ms: bool = False, dashboard: str = "ori
     _require_original(original)
     if startup_photo is not None:
         _require(startup_animation is None and startup_player_version is None,'Choose one startup option.')
-        return photo.attach(build_patch(original,usb_1ms=usb_1ms,dashboard=dashboard,layout=layout),startup_photo)
+        return photo.attach(build_patch(original,usb_1ms=usb_1ms,dashboard=dashboard,layout=layout,blink_ch2=blink_ch2),startup_photo)
     if startup_animation is not None:
         try:
-            return startup.attach(build_patch(original,usb_1ms=usb_1ms,dashboard=dashboard,layout=layout),startup_animation,
+            return startup.attach(build_patch(original,usb_1ms=usb_1ms,dashboard=dashboard,layout=layout,blink_ch2=blink_ch2),startup_animation,
                                   player_version=startup_player_version)
         except ValueError as error:
             raise PatchError(str(error)) from error
     _require(startup_player_version is None,'Startup player version requires an animation.')
     if dashboard == "custom":
         try:
+            if blink_ch2:
+                from dashboard_gauges import upgrade
+                layout={**upgrade(layout),'blink_ch2':True}
             return _build_custom_image(original, usb_1ms=usb_1ms, layout=layout)
         except ValueError as error:
             raise PatchError(str(error)) from error
@@ -292,8 +301,8 @@ def _build_custom_image(original: bytes, *, usb_1ms: bool, layout: dict) -> byte
         image[offset:offset + len(replacement)] = replacement
     image += appendix
     image += dashboard_custom.make_trailer(canonical, usb_1ms)
-    limit=(MAX_CUSTOM_IMAGE_SIZE if canonical['schema']==12 and canonical['wallpaper'] is not None else
-           startup.PLAYER_OFFSET-1 if canonical['schema'] in (4,5,7,8,9) else FAST_SIZE+dashboard_custom.MAX_APPENDIX_BYTES)
+    limit=(MAX_CUSTOM_IMAGE_SIZE if canonical['schema'] in (12,13) and canonical['wallpaper'] is not None else
+           startup.PLAYER_OFFSET-1 if canonical['schema'] in (4,5,7,8,9,14) else FAST_SIZE+dashboard_custom.MAX_APPENDIX_BYTES)
     _require(len(image) <= limit and FLASH_BASE + len(image) < 0x080F5000,
              "Custom firmware exceeds its bounded application area.")
     return bytes(image)
@@ -470,7 +479,9 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--dry-run", action="store_true", help="Validate and calculate hashes without creating a file")
         if command == "patch":
             sub.add_argument("--usb-1ms", action="store_true", help="Also apply the experimental 1 ms USB transport changes")
-            sub.add_argument("--dashboard", choices=("original", "ch1234", "ch123456", "custom", "strip_drift", "led_segments", "purple_drift"), default="original",
+            sub.add_argument('--blink-ch2',action='store_true',help='Flash CH2 above +90 using the existing home timer')
+            from dashboard_fullscreen import THEMES
+            sub.add_argument("--dashboard", choices=("original", "ch1234", "ch123456", "custom", *THEMES), default="original",
                              help="Original, CH1-4, CH1-6, or a validated custom grid")
             sub.add_argument("--layout", help="Local layout JSON, required only with --dashboard custom")
     args = parser.parse_args(argv)
@@ -485,7 +496,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(report, indent=2))
             return 0 if report["recognized"] else 2
         result = build_patch(original, usb_1ms=args.usb_1ms, dashboard=args.dashboard,
-                             layout=dashboard_custom.current_layout(read_layout_file(args.layout)) if args.layout else None) if args.command == "patch" else revert_patch(original)
+                             layout=dashboard_custom.current_layout(read_layout_file(args.layout)) if args.layout else None,
+                             blink_ch2=args.blink_ch2) if args.command == "patch" else revert_patch(original)
         report = make_manifest(original, result, args.command)
         report["dry_run"] = args.dry_run
         report["file_written"] = False

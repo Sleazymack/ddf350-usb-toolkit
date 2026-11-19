@@ -10,16 +10,22 @@ import dashboard_six as six
 import dashboard_themes as t
 import dashboard_faces as f
 
-THEMES=f.THEMES
+LEGACY_EXTRA_THEMES=('equalizer_gold','classic_chrome','neon_hex')
+EXTRA_THEMES=('equalizer_gold_v2','classic_chrome_v2','neon_hex_v2')
+THEMES=(*f.THEMES,*LEGACY_EXTRA_THEMES,*EXTRA_THEMES)
 MENU=0x200005d8
 def validate(spec):
     c._keys(spec,('schema','theme'),'full-screen theme')
-    c._require(type(spec['schema']) is int and spec['schema'] in (5,7,8,9),'Unknown full-screen schema.')
+    c._require(type(spec['schema']) is int and spec['schema'] in (5,7,8,9,14),'Unknown full-screen schema.')
     c._require(type(spec['theme']) is str and spec['theme'] in THEMES,'Unknown full-screen theme.')
+    c._require(spec['theme'] in f.THEMES or spec['schema'] in (9,14),'New presets require the current native layout.')
     return {'schema':spec['schema'],'theme':spec['theme']}
-def layout(key):return validate({'schema':9,'theme':key})
+def layout(key,*,blink_ch2=False):
+    c._require(type(blink_ch2) is bool,'CH2 alarm must be a boolean.')
+    return validate({'schema':14 if blink_ch2 else 9,'theme':key})
 def scene(key):return f.scene(key,True,True,native=True,centered=True)
-def render(key,values=None,*,usb_active=False):return f.render(key,values,True,True,native=True,usb_active=usb_active,centered=True)
+def render(key,values=None,*,usb_active=False,time_ms=0,blink_ch2=False):
+    return f.render(key,values,True,True,native=True,usb_active=usb_active,centered=True,alarm_off=blink_ch2 and bool(time_ms//125%2))
 def paint(canvas,key,values=None):
     sample={3:-50,4:50} if values is None else values
     return f.paint(canvas,key,sample,True,True,native=True,usb_active=True,centered=True)
